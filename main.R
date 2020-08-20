@@ -62,10 +62,8 @@ if(c_config_success)
   
   invisible(suppressPackageStartupMessages(sapply(pkgs, require, character.only = T))) ->
     lib.out
-  # pgConnect()
-  # source('../../sendmail_proj/functions/email_header.R',echo = F)
-  
-  c_lib_and_db <- ifelse(abs(sum(lib.out) - length(lib.out)), {
+
+c_lib_and_db <- ifelse(abs(sum(lib.out) - length(lib.out)), {
     tryCatch({
       install.packages(names(lib.out)[!lib.out], dependencies = T)
       return(T)
@@ -76,7 +74,7 @@ if(c_config_success)
   source("adwords_fn.R")
 }
 
-# dplyr::src_pos
+
 if(c_lib_and_db)
   {
   # source('../_config/tq_fns.R',echo = F)
