@@ -22,3 +22,7 @@ config.R
 *.dcf
 */rsconnect/*
 .httr-oauth
+runs/
+.venv/
+__pycache__/
+.pytest_cache/
