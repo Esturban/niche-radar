@@ -12,16 +12,18 @@ def write_outputs(
     clusters: list[dict],
     all_terms: list[dict],
     question_graph: dict,
+    evidence: list[dict],
     provider_results: list[dict],
     run_meta: dict,
-    max_clusters: int,
+    top_niches: int,
 ) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
-    top_clusters = clusters[:max_clusters]
-    dropped_clusters = clusters[max_clusters:]
+    top_clusters = clusters[:top_niches]
+    dropped_clusters = clusters[top_niches:]
 
     (outdir / "report.md").write_text(render_report(top_clusters, dropped_clusters, run_meta), encoding="utf-8")
     (outdir / "clusters.json").write_text(json.dumps(top_clusters, indent=2), encoding="utf-8")
+    (outdir / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     (outdir / "question_graph.json").write_text(json.dumps(question_graph, indent=2), encoding="utf-8")
     (outdir / "provider_hits.json").write_text(json.dumps(provider_results, indent=2), encoding="utf-8")
     (outdir / "run_meta.json").write_text(json.dumps(run_meta, indent=2), encoding="utf-8")
@@ -37,24 +39,32 @@ def append_run_index(root: Path, record: dict) -> None:
 
 
 def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_meta: dict) -> str:
+    focus = run_meta.get("focus") or "profile-driven"
+    source_labels = []
+    if run_meta.get("resume_path"):
+        source_labels.append(run_meta["resume_path"])
+    if run_meta.get("site_url"):
+        source_labels.append(run_meta["site_url"])
+
     lines = [
         "# niche-radar report",
         "",
         "## Executive summary",
-        f"- Topic seed: `{run_meta['topic']}`",
-        f"- Resume/profile: `{run_meta['resume_path']}`",
+        f"- Focus bias: `{focus}`",
+        f"- Profile sources: `{', '.join(source_labels) if source_labels else 'profile-driven'}`",
         f"- Confidence floor: `{run_meta['confidence_floor']}`",
-        "- This report identifies rising or resilient keyword territories and recurring questions.",
+        "- This report ranks up to five niches from strongest evidence to weakest evidence.",
+        "- External evidence is the backbone. Profile fit is a filter.",
         "- It does not validate market demand, willingness to pay, or lack of saturation.",
         "",
-        "## Top niche territories",
+        "## Top niches",
         "",
-        "| Cluster | Score | Confidence | Why it fits |",
-        "|---|---:|---:|---|",
+        "| Niche | Evidence | Confidence | Fit | Citations |",
+        "|---|---:|---:|---:|---:|",
     ]
     for cluster in top_clusters:
         lines.append(
-            f"| {cluster['title']} | {cluster['total_score']:.2f} | {cluster['confidence']:.2f} | {', '.join(cluster['lineage_roots'][:2])} |"
+            f"| {cluster['title']} | {cluster['evidence_strength']:.2f} ({cluster['evidence_tier']}) | {cluster['confidence']:.2f} | {cluster['profile_fit_score']:.2f} | {cluster['citation_count']} |"
         )
 
     for cluster in top_clusters:
@@ -63,21 +73,22 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 "",
                 f"## {cluster['title']}",
                 "",
+                f"- Evidence tier: `{cluster['evidence_tier']}`",
+                f"- Evidence strength: `{cluster['evidence_strength']:.2f}`",
+                f"- Citation count: `{cluster['citation_count']}`",
+                f"- Surface count: `{cluster['surface_count']}`",
                 f"- Profile fit score: `{cluster['profile_fit_score']:.2f}`",
                 f"- Trend strength: `{cluster['trend_strength']:.2f}`",
-                f"- Trend velocity: `{cluster['trend_velocity']:.2f}`",
-                f"- Batch survival score: `{cluster['batch_survival_score']:.2f}`",
-                f"- Adjacency score: `{cluster['adjacency_score']:.2f}`",
-                f"- Question density: `{cluster['question_density']:.2f}`",
-                f"- Surface spread: `{cluster['surface_spread']:.2f}`",
-                f"- Context relevance: `{cluster['context_relevance']:.2f}`",
+                f"- Recency support: `{cluster['recency_support']:.2f}`",
+                f"- Confidence: `{cluster['confidence']:.2f}`",
                 "",
                 "### Why it fits",
                 f"- Connected roots: {', '.join(cluster['lineage_roots'])}",
                 f"- Generations represented: {', '.join(str(value) for value in cluster['generations'])}",
                 "",
-                "### Trend behavior",
+                "### Why it surfaced externally",
                 f"- Representative terms: {', '.join(cluster['terms'][:6])}",
+                f"- Recurring related terms: {', '.join(cluster['related_terms'][:6]) if cluster['related_terms'] else 'No strong related-term signal captured.'}",
                 "",
                 "### Common question patterns",
             ]
@@ -87,23 +98,18 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         else:
             lines.append("- No strong question pattern surfaced from the active providers.")
 
-        lines.extend(
-            [
-                "",
-                "### Related terms/topics",
-            ]
-        )
-        if cluster["related_terms"]:
-            lines.extend(f"- {term}" for term in cluster["related_terms"][:10])
+        lines.extend(["", "### Supporting evidence"])
+        if cluster["evidence"]:
+            for item in cluster["evidence"][:5]:
+                lines.append(f"- [{item['title']}]({item['url']}): {item['snippet']}")
         else:
-            lines.append("- No related-term signal was captured.")
+            lines.append("- No public evidence pages were captured for this niche in this run.")
 
-        wedge = _suggest_wedge(cluster)
         lines.extend(
             [
                 "",
-                "### Possible wedge",
-                f"- {wedge}",
+                "### Suggested wedge",
+                f"- {cluster['suggested_wedge']}",
                 "",
                 "### What this does not prove",
                 "- It does not prove validated demand.",
@@ -111,27 +117,20 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 "- It does not prove the cluster is unsaturated.",
                 "",
                 "### Next validation step",
-                f"- Talk to 3 real operators who live near `{cluster['title']}` and test whether these question patterns map to active pain.",
+                f"- Talk to 3 operators in `{cluster['title']}` and test whether the cited problems map to active pain worth paying to fix.",
             ]
         )
 
-    lines.extend(["", "## Low-confidence or dropped clusters", ""])
+    lines.extend(["", "## Lower-ranked niches", ""])
     if dropped_clusters:
         for cluster in dropped_clusters[:8]:
             lines.append(
-                f"- {cluster['title']}: dropped after ranking because score `{cluster['total_score']:.2f}` / confidence `{cluster['confidence']:.2f}` was weaker."
+                f"- {cluster['title']}: lower-ranked because evidence `{cluster['evidence_strength']:.2f}` / confidence `{cluster['confidence']:.2f}` was weaker."
             )
     else:
         lines.append("- No dropped clusters in this run.")
 
     return "\n".join(lines) + "\n"
-
-
-def _suggest_wedge(cluster: dict) -> str:
-    title = cluster["title"]
-    if cluster["questions"]:
-        return f"Build a lightweight guide, workflow pack, or service around `{title}` that answers the top recurring questions first."
-    return f"Explore a content-led or service-led wedge around `{title}` before building software."
 
 
 def _write_terms_csv(path: Path, all_terms: list[dict]) -> None:

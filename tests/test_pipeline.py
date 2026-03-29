@@ -46,16 +46,44 @@ def _fake_youtube(terms):
     )
 
 
+def _fake_evidence(clusters, focus, evidence_pages):
+    output = {}
+    for cluster in clusters:
+        output[cluster["cluster_id"]] = {
+            "provider": "test_evidence",
+            "query": cluster["title_seed"],
+            "items": [
+                {
+                    "provider": "test_evidence",
+                    "query": cluster["title_seed"],
+                    "url": f"https://example.com/{cluster['cluster_id'].replace(' ', '-')}",
+                    "title": f"{cluster['title_seed']} guide",
+                    "snippet": f"{cluster['title_seed']} automation workflow evidence",
+                    "matched_terms": ["automation", "workflow"],
+                    "published_at": "2026-03-01T00:00:00+00:00",
+                    "recency_score": 1.0,
+                    "quality_score": 0.9,
+                }
+            ],
+            "citation_count": 1,
+            "snippet_quality_raw": 0.9,
+            "recency_support_raw": 1.0,
+        }
+    return output
+
+
 def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
     monkeypatch.setattr("niche_radar.pipeline.collect_trends", _fake_trends)
     monkeypatch.setattr("niche_radar.pipeline.collect_autosuggest", _fake_autosuggest)
     monkeypatch.setattr("niche_radar.pipeline.collect_youtube", _fake_youtube)
+    monkeypatch.setattr("niche_radar.pipeline.collect_evidence_search", _fake_evidence)
 
     config = RunConfig(
         resume_path=Path("tests/fixtures/resume.md"),
-        topic="small business operations",
+        site_url=None,
+        focus="small business operations",
         outdir=tmp_path / "run",
-        max_clusters=4,
+        top_niches=4,
     )
     result = discover(config)
 
@@ -63,6 +91,7 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
     for name in [
         "report.md",
         "clusters.json",
+        "evidence.json",
         "terms.csv",
         "question_graph.json",
         "trends.csv",
@@ -72,10 +101,11 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
         assert (tmp_path / "run" / name).exists()
 
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "validated demand" in report
+    assert "strongest evidence to weakest evidence" in report
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert clusters
     assert "profile_fit_score" in clusters[0]
+    assert "evidence_strength" in clusters[0]
 
 
 def test_insufficient_signal_creates_report(monkeypatch, tmp_path):
@@ -86,9 +116,10 @@ def test_insufficient_signal_creates_report(monkeypatch, tmp_path):
 
     config = RunConfig(
         resume_path=Path("tests/fixtures/resume.md"),
-        topic="operations automation",
+        site_url=None,
+        focus="operations automation",
         outdir=tmp_path / "run",
-        max_clusters=4,
+        top_niches=4,
     )
     result = discover(config)
     assert result["insufficient_signal"] is True
