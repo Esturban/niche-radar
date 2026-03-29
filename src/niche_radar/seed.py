@@ -33,7 +33,6 @@ def generate_seed_terms(profile: dict, topic: str, limit: int = 18) -> list[str]
     for keyword in keywords[:8]:
         if keyword not in DISCOVERY_SIGNAL_TOKENS:
             continue
-        candidates.append(keyword)
         if keyword != "workflow":
             candidates.append(f"{keyword} workflow")
         if keyword != "automation":
