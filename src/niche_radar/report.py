@@ -70,6 +70,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 f"- Adjacency score: `{cluster['adjacency_score']:.2f}`",
                 f"- Question density: `{cluster['question_density']:.2f}`",
                 f"- Surface spread: `{cluster['surface_spread']:.2f}`",
+                f"- Context relevance: `{cluster['context_relevance']:.2f}`",
                 "",
                 "### Why it fits",
                 f"- Connected roots: {', '.join(cluster['lineage_roots'])}",

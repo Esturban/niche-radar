@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .utils import content_tokens, dedupe_preserve_order, informative_phrase, safe_mean, tokenize
+from .utils import (
+    DISCOVERY_SIGNAL_TOKENS,
+    content_tokens,
+    dedupe_preserve_order,
+    informative_phrase,
+    safe_mean,
+    tokenize,
+)
 
 ACTION_VERBS = {
     "analyzed",
@@ -35,15 +42,29 @@ def extract_profile(text: str) -> dict:
         if all(token not in {"and", "the", "for", "with"} for token in group)
     )
 
-    keywords = [term for term, _ in word_counts.most_common(40)]
-    phrases = [
+    raw_keywords = [term for term, _ in word_counts.most_common(60)]
+    raw_phrases = [
         term
         for term, _ in (bigrams + trigrams).most_common(50)
         if informative_phrase(term)
     ]
     verbs = [token for token in words if token in ACTION_VERBS]
 
-    keywords = [keyword for keyword in keywords if len(keyword) > 2][:20]
+    phrase_keywords = [
+        token
+        for phrase in raw_phrases
+        for token in content_tokens(phrase)
+        if token in DISCOVERY_SIGNAL_TOKENS
+    ]
+    keywords = dedupe_preserve_order(
+        [keyword for keyword in raw_keywords if len(keyword) > 2 and keyword in DISCOVERY_SIGNAL_TOKENS]
+        + phrase_keywords
+    )[:20]
+    phrases = [
+        phrase
+        for phrase in raw_phrases
+        if any(token in DISCOVERY_SIGNAL_TOKENS for token in content_tokens(phrase))
+    ][:12]
     signals = dedupe_preserve_order(phrases[:12] + keywords)
     return {
         "keywords": keywords[:20],

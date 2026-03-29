@@ -86,6 +86,7 @@ STOPWORDS = {
 }
 
 QUESTION_PREFIXES = ("how", "what", "why", "when", "where", "can", "should", "which")
+INTENT_MARKERS = ("template", "software", "tool", "tools", "consultant", "service", "services", "ideas", "reddit")
 BUSINESS_SIGNAL_TOKENS = {
     "analysis",
     "analytics",
@@ -113,6 +114,24 @@ BUSINESS_SIGNAL_TOKENS = {
     "sql",
     "strategy",
     "terraform",
+    "visualization",
+    "workflow",
+    "workflows",
+}
+DISCOVERY_SIGNAL_TOKENS = {
+    "analytics",
+    "automation",
+    "dashboard",
+    "integration",
+    "integrations",
+    "marketing",
+    "operations",
+    "optimization",
+    "report",
+    "reporting",
+    "research",
+    "seo",
+    "strategy",
     "visualization",
     "workflow",
     "workflows",
@@ -176,7 +195,11 @@ def minmax_scale(mapping: dict[str, float]) -> dict[str, float]:
 
 def is_question_like(text: str) -> bool:
     lowered = text.lower().strip()
-    return lowered.startswith(QUESTION_PREFIXES) or " how " in f" {lowered} "
+    return (
+        lowered.startswith(QUESTION_PREFIXES)
+        or " how " in f" {lowered} "
+        or any(marker in lowered for marker in INTENT_MARKERS)
+    )
 
 
 def shared_token_score(left: str, right: str) -> float:
@@ -201,3 +224,9 @@ def informative_phrase(phrase: str, min_tokens: int = 2, max_tokens: int = 4) ->
     if not any(token in BUSINESS_SIGNAL_TOKENS for token in tokens):
         return False
     return True
+
+
+def normalize_search_term(term: str) -> str:
+    term = re.sub(r"^(how to|best)\s+", "", term.strip().lower())
+    term = re.sub(r"\s+", " ", term)
+    return term

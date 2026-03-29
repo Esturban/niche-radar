@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from .profile import extract_profile
 from .rank import score_clusters
 from .report import append_run_index, write_outputs
 from .seed import generate_seed_terms
-from .utils import content_tokens, now_iso, shared_token_score, slugify
+from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term, now_iso, shared_token_score, slugify
 
 
 def discover(config: RunConfig) -> dict:
@@ -56,7 +57,7 @@ def discover(config: RunConfig) -> dict:
         return _write_insufficient_signal(config=config, profile=profile, seeds=seeds, reasons=[result.reason for result in provider_results if result.reason])
 
     clusters = cluster_terms(all_terms_map)
-    ranked_clusters, _ = score_clusters(clusters=clusters, profile=profile, total_generations=config.generations)
+    ranked_clusters, _ = score_clusters(clusters=clusters, profile=profile, total_generations=config.generations, topic=config.topic)
     question_graph = build_question_graph(ranked_clusters)
 
     outdir = config.outdir
@@ -123,7 +124,11 @@ def _collect_provider_round(config: RunConfig, terms: list[str]) -> list[Provide
 
 
 def _provider_query_terms(records: list[TermRecord], profile: dict, topic: str, limit: int = 18) -> list[str]:
-    profile_signals = set(profile.get("keywords", []) + profile.get("phrases", []) + profile.get("themes", []))
+    profile_signals = {
+        token
+        for value in profile.get("keywords", []) + profile.get("phrases", []) + profile.get("themes", [])
+        for token in content_tokens(value)
+    }
     topic_tokens = set(content_tokens(topic))
 
     def score(record: TermRecord) -> tuple[float, int, int]:
@@ -146,14 +151,60 @@ def _provider_query_terms(records: list[TermRecord], profile: dict, topic: str, 
     seen: set[str] = set()
     output: list[str] = []
     for record in ranked:
-        key = record.term.lower().strip()
-        if key in seen:
-            continue
-        seen.add(key)
-        output.append(record.term)
-        if len(output) >= limit:
-            break
+        for variant in _provider_variants(record.term, topic):
+            key = variant.lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(variant)
+            if len(output) >= limit:
+                return output
     return output
+
+
+def _provider_variants(term: str, topic: str) -> list[str]:
+    normalized = normalize_search_term(term)
+    tokens = content_tokens(normalized)
+    signal_tokens = [token for token in tokens if token in DISCOVERY_SIGNAL_TOKENS]
+    variants = [normalized]
+
+    if "small business" in topic.lower():
+        for token in signal_tokens[:2]:
+            variants.extend(
+                [
+                    f"small business {token}",
+                    f"{token} for small business",
+                ]
+            )
+            if "operations" in topic.lower():
+                variants.append(f"small business operations {token}")
+
+    if "operations" in topic.lower() and "automation" in signal_tokens:
+        variants.append("business process automation")
+
+    compressed = _compress_long_term(normalized, signal_tokens)
+    if compressed:
+        variants.append(compressed)
+
+    cleaned = []
+    for variant in dedupe_preserve_order(variants):
+        variant = re.sub(r"\s+", " ", variant).strip()
+        if not variant:
+            continue
+        token_count = len(content_tokens(variant))
+        if token_count == 0 or token_count > 4:
+            continue
+        cleaned.append(variant)
+    return cleaned
+
+
+def _compress_long_term(term: str, signal_tokens: list[str]) -> str | None:
+    if not signal_tokens:
+        return None
+    primary = signal_tokens[0]
+    if "small business" in term:
+        return f"small business {primary}"
+    return f"{primary} workflow"
 
 
 def _select_survivors(term_states: dict[str, dict], limit: int) -> list[TermRecord]:
