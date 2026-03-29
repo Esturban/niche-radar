@@ -5,6 +5,8 @@ from pathlib import Path
 
 from niche_radar.models import ProviderResult, RunConfig
 from niche_radar.pipeline import discover
+from niche_radar.cluster import cluster_terms
+from niche_radar.collect.youtube import _parse_youtube_suggest
 
 
 def _fake_trends(terms, topic, geo="US"):
@@ -93,3 +95,31 @@ def test_insufficient_signal_creates_report(monkeypatch, tmp_path):
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
     assert "Insufficient signal" in report
 
+
+def test_cluster_terms_split_operator_signals():
+    clusters = cluster_terms(
+        {
+            "small business automation": {
+                "term": "small business automation",
+                "generation": 0,
+                "lineage_root": "small business automation",
+                "hits": [],
+            },
+            "small business dashboard": {
+                "term": "small business dashboard",
+                "generation": 0,
+                "lineage_root": "small business dashboard",
+                "hits": [],
+            },
+        }
+    )
+    titles = {cluster["title_seed"] for cluster in clusters}
+    assert "small business automation" in titles
+    assert "small business dashboard" in titles
+
+
+def test_parse_youtube_suggest_wrapper():
+    payload = 'window.google.ac.h(["small business automation",[["small business automation",0,[512]],["small business automation software",0,[22,30]]],{"k":1}])'
+    parsed = _parse_youtube_suggest(payload)
+    assert parsed[0] == "small business automation"
+    assert parsed[1][1][0] == "small business automation software"

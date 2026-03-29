@@ -4,8 +4,14 @@ from .evolve import lineage_generations
 from .utils import clamp01, content_tokens, minmax_scale, safe_mean
 
 
-def score_clusters(clusters: list[dict], profile: dict, total_generations: int) -> tuple[list[dict], list[dict]]:
-    profile_vocab = set(profile.get("keywords", []) + profile.get("phrases", []) + profile.get("themes", []))
+def score_clusters(clusters: list[dict], profile: dict, total_generations: int, topic: str) -> tuple[list[dict], list[dict]]:
+    profile_vocab = {
+        token
+        for value in profile.get("keywords", []) + profile.get("phrases", []) + profile.get("themes", [])
+        for token in content_tokens(value)
+    }
+    topic_vocab = set(content_tokens(topic))
+    small_business_mode = "small business" in topic.lower()
     lineage_map = lineage_generations(
         [
             # reconstructed light-weight records
@@ -22,6 +28,7 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
     raw_question: dict[str, float] = {}
     raw_surface: dict[str, float] = {}
     raw_survival: dict[str, float] = {}
+    raw_context: dict[str, float] = {}
 
     for cluster in clusters:
         cluster_id = cluster["cluster_id"]
@@ -34,6 +41,17 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
         raw_surface[cluster_id] = safe_mean(item.get("surface_spread_raw", 0.0) for item in cluster["items"])
         survivals = [len(lineage_map.get(root, set())) / max(1, total_generations) for root in cluster["lineage_roots"]]
         raw_survival[cluster_id] = safe_mean(survivals)
+        context_hits = 0
+        context_total = 0
+        for value in cluster["terms"] + cluster["related_terms"][:10] + cluster["questions"][:6]:
+            lowered = value.lower()
+            context_total += 1
+            if set(content_tokens(value)) & topic_vocab:
+                context_hits += 1
+                continue
+            if small_business_mode and "small business" in lowered:
+                context_hits += 1
+        raw_context[cluster_id] = context_hits / max(1, context_total)
 
     fit = minmax_scale(raw_fit)
     strength = minmax_scale(raw_strength)
@@ -42,6 +60,7 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
     question = minmax_scale(raw_question)
     surface = minmax_scale(raw_surface)
     survival = minmax_scale(raw_survival)
+    context = minmax_scale(raw_context)
 
     scored: list[dict] = []
     for cluster in clusters:
@@ -53,17 +72,19 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
                 + adjacency.get(cluster_id, 0.0)
                 + surface.get(cluster_id, 0.0)
                 + survival.get(cluster_id, 0.0)
+                + context.get(cluster_id, 0.0)
             )
-            / 5
+            / 6
         )
         total_score = clamp01(
-            fit.get(cluster_id, 0.0) * 0.24
-            + strength.get(cluster_id, 0.0) * 0.18
+            fit.get(cluster_id, 0.0) * 0.20
+            + context.get(cluster_id, 0.0) * 0.20
+            + strength.get(cluster_id, 0.0) * 0.14
             + velocity.get(cluster_id, 0.0) * 0.14
             + survival.get(cluster_id, 0.0) * 0.14
             + adjacency.get(cluster_id, 0.0) * 0.12
             + question.get(cluster_id, 0.0) * 0.10
-            + surface.get(cluster_id, 0.0) * 0.08
+            + surface.get(cluster_id, 0.0) * 0.10
         )
         scored.append(
             {
@@ -76,6 +97,7 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
                 "adjacency_score": round(adjacency.get(cluster_id, 0.0), 4),
                 "question_density": round(question.get(cluster_id, 0.0), 4),
                 "surface_spread": round(surface.get(cluster_id, 0.0), 4),
+                "context_relevance": round(context.get(cluster_id, 0.0), 4),
                 "confidence": round(confidence, 4),
                 "total_score": round(total_score, 4),
                 "validation_needed": True,
@@ -85,4 +107,3 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int) 
 
     ranked = sorted(scored, key=lambda cluster: (cluster["total_score"], cluster["confidence"]), reverse=True)
     return ranked, scored
-

@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 
 from .models import TermRecord
-from .utils import dedupe_preserve_order
+from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term
 
 
 def expand_terms(
@@ -14,22 +14,19 @@ def expand_terms(
     generation: int,
 ) -> list[TermRecord]:
     expanded: list[TermRecord] = []
-    keyword_pool = profile.get("keywords", [])[:8]
-    phrase_pool = profile.get("phrases", [])[:6]
+    keyword_pool = [keyword for keyword in profile.get("keywords", []) if keyword in DISCOVERY_SIGNAL_TOKENS][:6]
 
     for record in records:
-        base = record.term
-        heuristics = [
-            f"how to {base}",
-            f"best {base} for small business",
-            f"{base} automation",
-            f"{base} template",
-            f"{base} consultant",
-            f"{base} service",
-            f"{topic} {base}",
-        ]
-        heuristics.extend(f"{base} {keyword}" for keyword in keyword_pool[:3])
-        heuristics.extend(f"{base} {phrase}" for phrase in phrase_pool[:2])
+        base = normalize_search_term(record.term)
+        base_tokens = set(content_tokens(base))
+        heuristics = [f"how to {base}", f"{base} software", f"{base} template", f"{base} consultant"]
+        if "workflow" not in base_tokens:
+            heuristics.append(f"{base} workflow")
+        if "automation" not in base_tokens:
+            heuristics.append(f"{base} automation")
+        heuristics.extend(
+            f"{base} {keyword}" for keyword in keyword_pool[:2] if keyword not in base_tokens
+        )
 
         llm_terms = _maybe_llm_expand(base=base, topic=topic, keyword_pool=keyword_pool)
         for term in dedupe_preserve_order(heuristics + llm_terms)[:8]:
@@ -90,4 +87,3 @@ def lineage_generations(records: list[TermRecord]) -> dict[str, set[int]]:
     for record in records:
         generations[record.lineage_root].add(record.generation)
     return generations
-
