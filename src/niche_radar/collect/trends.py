@@ -22,7 +22,13 @@ def collect_trends(terms: list[str], topic: str, geo: str = "US") -> ProviderRes
     if not candidates:
         return ProviderResult(provider="google_trends", status="unavailable", reason="no candidate terms")
 
-    trend = TrendReq(hl="en-US", tz=360)
+    trend = TrendReq(
+        hl="en-US",
+        tz=360,
+        timeout=(4, 12),
+        retries=0,
+        backoff_factor=0,
+    )
     result = ProviderResult(provider="google_trends", status="ok", meta={"anchors": DEFAULT_ANCHORS, "topic": topic, "geo": geo})
 
     for batch in chunks(candidates, 3):
@@ -75,4 +81,3 @@ def collect_trends(terms: list[str], topic: str, geo: str = "US") -> ProviderRes
         result.status = "unavailable"
         result.reason = "google trends returned no usable metrics"
     return result
-
