@@ -194,6 +194,8 @@ def _provider_variants(term: str, topic: str) -> list[str]:
         token_count = len(content_tokens(variant))
         if token_count == 0 or token_count > 4:
             continue
+        if "small business" not in variant and token_count < 2:
+            continue
         cleaned.append(variant)
     return cleaned
 

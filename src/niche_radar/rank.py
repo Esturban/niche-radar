@@ -53,14 +53,14 @@ def score_clusters(clusters: list[dict], profile: dict, total_generations: int, 
                 context_hits += 1
         raw_context[cluster_id] = context_hits / max(1, context_total)
 
-    fit = minmax_scale(raw_fit)
+    fit = {key: clamp01(value) for key, value in raw_fit.items()}
     strength = minmax_scale(raw_strength)
     velocity = minmax_scale(raw_velocity)
     adjacency = minmax_scale(raw_adjacency)
     question = minmax_scale(raw_question)
     surface = minmax_scale(raw_surface)
     survival = minmax_scale(raw_survival)
-    context = minmax_scale(raw_context)
+    context = {key: clamp01(value) for key, value in raw_context.items()}
 
     scored: list[dict] = []
     for cluster in clusters:
