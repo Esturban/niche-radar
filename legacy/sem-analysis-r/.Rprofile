@@ -1,0 +1,7 @@
+Sys.setenv(OPENAI_API_KEY = "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")
+Sys.setenv(OPENAI_MODEL = "gpt-3.5-turbo")
+Sys.setenv(OPENAI_TEMPERATURE = 1)
+Sys.setenv(OPENAI_TOP_P = 1)
+Sys.setenv(OPENAI_FREQUENCY_PENALTY = 0)
+Sys.setenv(OPENAI_PRESENCE_PENALTY = 0)
+Sys.setenv(OPENAI_VERBOSE = FALSE)
