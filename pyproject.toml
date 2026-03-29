@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "niche-radar"
+version = "0.1.0"
+description = "Free-first niche discovery engine for rising keyword territories and question clusters."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pypdf>=4.2.0",
+  "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+llm = ["openai>=1.35.0"]
+trends = ["pytrends>=4.9.2"]
+dev = ["pytest>=8.2.0"]
+
+[project.scripts]
+niche-radar = "niche_radar.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

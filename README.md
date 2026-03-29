@@ -1,67 +1,108 @@
-#  Search Engine Marketing Analysis - SEM Analysis  
+# niche-radar
 
-### An R project for evaluating Google Trends performance using single factor analysis in the `tidyverse`  
+`niche-radar` is a free-first niche discovery CLI. It does not claim to validate demand. It helps a solo operator or small SMB explore:
 
-This R project implements a tidyverse approach to aggregating Google Trends results for various keywords generated into a single array relevant to a specific topic.   
-> How do you determine the keywords and search terms which have performed well historically and are likely to continue with an uptrending trajectory?  
+- 1 to 5 active niches that match a user's background
+- adjacent search terms and recurring question clusters
+- public evidence pages and snippets that support each niche
+- possible wedges connected to a user's background
 
-[Google Trends](https://trends.google.com/trends/explore "Google Trends") attempts to address the answer to a question like this, but limits you in the GUI to only look up 5 search terms at one time.
-The SEM Analysis project uses a keywords extract from [Dashboardom](https://www.dashboardom.com/advertools) based on relevant combinations of the terms.  For more information on getting started with keyword generating, [this slide deck](https://www.slideshare.net/eliasdabbas/dont-research-keywords-generate-them) does a great job of explaining how best to maximize the use of the keyword generator.  
+The default design goal is `free first`:
 
-### Installation  
+- Google Trends is treated as best-effort relative momentum
+- Google Suggest and YouTube are discovery sources
+- public web evidence is fetched with a free search fallback
+- You.com Search is an optional premium evidence backend
+- Search Console and Keyword Planner are optional local enrichments, not prerequisites
+- if providers are unavailable, the run degrades honestly and explains why
 
-```sh
-git clone https://github.com/Esturban/sem-analysis.git
-```  
+## Install
 
-#### Dependencies  
-
-The following are the required libraries to run the project:  
-
-```r  
-  pkgs <-
-    c(
-      'purrr',
-      'dplyr',
-      'tidyr',
-      'magrittr',
-      'reshape2',
-      'gtrendsR',
-      'GGally',
-      'ggmap',
-      'rvest'
-    )
-  
-  invisible(suppressPackageStartupMessages(sapply(pkgs, require, character.only = T))) ->
-    lib.out
-
-c_lib_and_db <- ifelse(abs(sum(lib.out) - length(lib.out)), {
-    tryCatch({
-      install.packages(names(lib.out)[!lib.out], dependencies = T)
-      return(T)
-    }, error = function(err)
-      F)
-  }, T)  
-  
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
 ```
 
-### Limitations  
+Optional extras:
 
-The following are the limitations of this project:  
-- Daily limits may be reached for scaling of search terms on keyword extracts larger than 1000 observations 
+```bash
+pip install -e .[dev,llm,trends]
+```
 
-### To do  
+## Usage
 
-- Set limitations to the number of Google Trends calls the project can make on a daily basis  
-- Build in a randomized sleep between Google Trends queries to extend the scale size
-- Build in a unit test for evaluating that the adword_fn functions work as expected  
+```bash
+niche-radar discover \
+  --resume /path/to/resume.md \
+  --focus "small business operations"
+```
 
+Website-based profile input:
 
-### Further Resources  
+```bash
+niche-radar discover \
+  --site https://example.com \
+  --top-niches 5
+```
 
-- [DataCamp Tutorial on Search Engine Marketing](http://bit.ly/datacamp_sem)  
-- [DataCamp Project to practice generating keywords using Python and pands](https://www.datacamp.com/projects/400)  
-- [Example use of the gtrendsR package](https://www.r-bloggers.com/vignette-google-trends-with-the-gtrendsr-package/)  
-- [Using API-based R packages](http://lab.rady.ucsd.edu/sawtooth/business_analytics_in_r/DataApi.html)  
+Merged profile input plus optional enrichments:
 
+```bash
+niche-radar discover \
+  --resume /path/to/resume.pdf \
+  --site https://example.com \
+  --focus "creator education" \
+  --evidence-pages 3 \
+  --with-search-console \
+  --with-keyword-planner
+```
 
+Compatibility notes:
+
+- `--topic` is still accepted as a deprecated alias for `--focus`
+- `--max-clusters` is still accepted as a deprecated alias for `--top-niches`
+- at least one of `--resume` or `--site` is required
+
+## Optional provider configuration
+
+`niche-radar` is designed to run without paid services, but some enrichments need environment variables.
+
+- `BING_AUTOSUGGEST_KEY`: enables Bing Autosuggest API
+- `YOUTUBE_API_KEY`: enables YouTube Data API
+- `YOU_API_KEY`: enables You.com Search for evidence collection and recency metadata
+- `SEARCH_CONSOLE_EXPORT`: path to a JSON/CSV export of query data
+- `KEYWORD_PLANNER_EXPORT`: path to a JSON/CSV export of keyword data
+- `OPENAI_API_KEY`: optional LLM expansion
+
+Notes:
+
+- Google Trends support is best-effort. If `pytrends` is installed, the CLI will use it behind a provider interface and degrade when it fails.
+- Search Console and Keyword Planner integrations are export-based in v1. They are optional enrichments, not the core source of truth.
+
+## Output
+
+Each run writes a folder under `runs/` with:
+
+- `report.md`
+- `clusters.json`
+- `evidence.json`
+- `terms.csv`
+- `question_graph.json`
+- `trends.csv`
+- `provider_hits.json`
+- `run_meta.json`
+
+The final shortlist is ranked from strongest evidence to weakest evidence. Each niche includes:
+
+- evidence strength and evidence tier
+- profile fit score
+- cited snippets and URLs when available
+- a suggested wedge
+- a validation caveat and next step
+
+It also appends a one-line summary to `runs/index.jsonl`.
+
+## Legacy project
+
+The previous R-based SEM analysis project is preserved under [legacy/sem-analysis-r](/Users/EVA/Desktop/eva/03_development/_dev/repos/2_analysis/r/sem-analysis/legacy/sem-analysis-r).
