@@ -86,6 +86,37 @@ STOPWORDS = {
 }
 
 QUESTION_PREFIXES = ("how", "what", "why", "when", "where", "can", "should", "which")
+BUSINESS_SIGNAL_TOKENS = {
+    "analysis",
+    "analytics",
+    "api",
+    "apis",
+    "automation",
+    "dashboard",
+    "data",
+    "engineering",
+    "integration",
+    "integrations",
+    "llm",
+    "marketing",
+    "operations",
+    "optimization",
+    "pipeline",
+    "pipelines",
+    "postgresql",
+    "python",
+    "rag",
+    "report",
+    "reporting",
+    "research",
+    "seo",
+    "sql",
+    "strategy",
+    "terraform",
+    "visualization",
+    "workflow",
+    "workflows",
+}
 
 
 def now_iso() -> str:
@@ -166,5 +197,7 @@ def informative_phrase(phrase: str, min_tokens: int = 2, max_tokens: int = 4) ->
         return False
     banned = {"toronto", "ontario", "canada", "month", "year", "time", "application"}
     if any(token in banned for token in tokens):
+        return False
+    if not any(token in BUSINESS_SIGNAL_TOKENS for token in tokens):
         return False
     return True
