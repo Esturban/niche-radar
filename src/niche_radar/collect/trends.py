@@ -6,6 +6,8 @@ from ..models import ProviderResult
 from ..utils import chunks, dedupe_preserve_order
 
 DEFAULT_ANCHORS = ["small business", "how to start a business"]
+MAX_TREND_BATCHES = 2
+MAX_TREND_CANDIDATES = 6
 
 
 def collect_trends(terms: list[str], topic: str, geo: str = "US") -> ProviderResult:
@@ -19,19 +21,34 @@ def collect_trends(terms: list[str], topic: str, geo: str = "US") -> ProviderRes
         )
 
     candidates = [term for term in dedupe_preserve_order(terms) if term.lower() not in {anchor.lower() for anchor in DEFAULT_ANCHORS}]
+    candidates = candidates[:MAX_TREND_CANDIDATES]
     if not candidates:
         return ProviderResult(provider="google_trends", status="unavailable", reason="no candidate terms")
 
     trend = TrendReq(
         hl="en-US",
         tz=360,
-        timeout=(4, 12),
+        timeout=(3, 6),
         retries=0,
         backoff_factor=0,
     )
-    result = ProviderResult(provider="google_trends", status="ok", meta={"anchors": DEFAULT_ANCHORS, "topic": topic, "geo": geo})
+    result = ProviderResult(
+        provider="google_trends",
+        status="ok",
+        meta={
+            "anchors": DEFAULT_ANCHORS,
+            "topic": topic,
+            "geo": geo,
+            "candidate_limit": MAX_TREND_CANDIDATES,
+            "batch_limit": MAX_TREND_BATCHES,
+        },
+    )
 
-    for batch in chunks(candidates, 3):
+    for batch_index, batch in enumerate(chunks(candidates, 3)):
+        if batch_index >= MAX_TREND_BATCHES:
+            result.status = "degraded"
+            result.reason = "google trends batch limit reached"
+            break
         keywords = batch + DEFAULT_ANCHORS
         try:
             trend.build_payload(keywords, timeframe="today 12-m", geo=geo)
