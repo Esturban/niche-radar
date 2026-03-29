@@ -6,10 +6,12 @@ from pathlib import Path
 
 @dataclass(slots=True)
 class RunConfig:
-    resume_path: Path
-    topic: str
+    resume_path: Path | None
+    site_url: str | None
+    focus: str
     outdir: Path
-    max_clusters: int = 12
+    top_niches: int = 5
+    evidence_pages: int = 3
     geo: str = "US"
     generations: int = 3
     with_search_console: bool = False
@@ -33,4 +35,3 @@ class TermRecord:
     source: str
     lineage_root: str
     parent_term: str | None = None
-
