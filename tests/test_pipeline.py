@@ -101,11 +101,15 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
         assert (tmp_path / "run" / name).exists()
 
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "strongest evidence to weakest evidence" in report
+    assert "## Recommended bets" in report
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert clusters
     assert "profile_fit_score" in clusters[0]
     assert "evidence_strength" in clusters[0]
+    assert "micro_wedges" in clusters[0]
+    run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+    assert "wedge_summary" in run_meta
+    assert run_meta["wedge_summary"]["specificity_outcome"] in {"recommended_bets_found", "not_specific_enough"}
 
 
 def test_insufficient_signal_creates_report(monkeypatch, tmp_path):

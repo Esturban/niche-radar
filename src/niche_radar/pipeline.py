@@ -17,6 +17,7 @@ from .collect import (
 from .evolve import expand_terms
 from .ingest import load_profile
 from .models import ProviderResult, RunConfig, TermRecord
+from .narrow import attach_micro_wedges
 from .normalize import combine_provider_signals
 from .profile import extract_profile
 from .rank import score_clusters
@@ -63,8 +64,9 @@ def discover(config: RunConfig) -> dict:
     initial_ranked_clusters, _ = score_clusters(clusters=clusters, profile=profile, total_generations=config.generations, topic=focus)
     evidence_candidates = initial_ranked_clusters[: max(config.top_niches * 2, config.top_niches)]
     evidence_by_cluster = collect_evidence_search(clusters=evidence_candidates, focus=focus, evidence_pages=config.evidence_pages)
+    narrowed_clusters = attach_micro_wedges(clusters=clusters, evidence_by_cluster=evidence_by_cluster)
     ranked_clusters, _ = score_clusters(
-        clusters=clusters,
+        clusters=narrowed_clusters,
         profile=profile,
         total_generations=config.generations,
         topic=focus,
@@ -75,6 +77,7 @@ def discover(config: RunConfig) -> dict:
 
     outdir = config.outdir
     confidence_floor = min((cluster["confidence"] for cluster in ranked_clusters), default=0.0)
+    recommended_bet_count = sum(1 for cluster in ranked_clusters if cluster.get("recommended_bet"))
     run_meta = {
         "generated_at": now_iso(),
         "resume_path": str(config.resume_path) if config.resume_path else None,
@@ -89,6 +92,12 @@ def discover(config: RunConfig) -> dict:
         "evidence_summary": {
             "clusters_evaluated": len(evidence_candidates),
             "citations_collected": len(evidence),
+        },
+        "wedge_summary": {
+            "clusters_with_wedges": sum(1 for cluster in ranked_clusters if cluster.get("micro_wedges")),
+            "recommended_bet_count": recommended_bet_count,
+            "near_miss_count": sum(1 for cluster in ranked_clusters if not cluster.get("recommended_bet")),
+            "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "not_specific_enough",
         },
         "confidence_floor": round(confidence_floor, 4),
         "seed_terms": seeds,

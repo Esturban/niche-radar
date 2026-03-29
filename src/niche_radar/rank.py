@@ -40,6 +40,7 @@ def score_clusters(
     raw_evidence_quality: dict[str, float] = {}
     raw_recency: dict[str, float] = {}
     raw_surface_count: dict[str, float] = {}
+    raw_specificity: dict[str, float] = {}
 
     for cluster in clusters:
         cluster_id = cluster["cluster_id"]
@@ -59,6 +60,7 @@ def score_clusters(
         raw_citations[cluster_id] = float(evidence.get("citation_count", 0))
         raw_evidence_quality[cluster_id] = float(evidence.get("snippet_quality_raw", 0.0))
         raw_recency[cluster_id] = float(evidence.get("recency_support_raw", 0.0))
+        raw_specificity[cluster_id] = float(cluster.get("specificity_score", 0.0))
         context_hits = 0
         context_total = 0
         for value in cluster["terms"] + cluster["related_terms"][:10] + cluster["questions"][:6]:
@@ -83,6 +85,7 @@ def score_clusters(
     evidence_quality = {key: clamp01(value) for key, value in raw_evidence_quality.items()}
     recency = {key: clamp01(value) for key, value in raw_recency.items()}
     surface_count = minmax_scale(raw_surface_count)
+    specificity = {key: clamp01(value) for key, value in raw_specificity.items()}
 
     scored: list[dict] = []
     for cluster in clusters:
@@ -104,15 +107,17 @@ def score_clusters(
                 + surface.get(cluster_id, 0.0)
                 + survival.get(cluster_id, 0.0)
                 + context.get(cluster_id, 0.0)
+                + specificity.get(cluster_id, 0.0)
             )
-            / 7
+            / 8
         )
         total_score = clamp01(
-            evidence_strength * 0.34
-            + fit.get(cluster_id, 0.0) * 0.16
-            + context.get(cluster_id, 0.0) * 0.14
-            + strength.get(cluster_id, 0.0) * 0.10
-            + velocity.get(cluster_id, 0.0) * 0.08
+            evidence_strength * 0.28
+            + specificity.get(cluster_id, 0.0) * 0.18
+            + fit.get(cluster_id, 0.0) * 0.14
+            + context.get(cluster_id, 0.0) * 0.12
+            + strength.get(cluster_id, 0.0) * 0.08
+            + velocity.get(cluster_id, 0.0) * 0.06
             + survival.get(cluster_id, 0.0) * 0.06
             + adjacency.get(cluster_id, 0.0) * 0.04
             + question.get(cluster_id, 0.0) * 0.04
@@ -139,9 +144,10 @@ def score_clusters(
                 "context_relevance": round(context.get(cluster_id, 0.0), 4),
                 "trend_support": round(strength.get(cluster_id, 0.0), 4),
                 "recency_support": round(recency.get(cluster_id, 0.0), 4),
+                "specificity_score": round(specificity.get(cluster_id, 0.0), 4),
                 "confidence": round(confidence, 4),
                 "total_score": round(total_score, 4),
-                "suggested_wedge": _suggested_wedge(cluster, evidence.get("items", [])),
+                "suggested_wedge": (cluster.get("recommended_wedge") or {}).get("advice") or _suggested_wedge(cluster, evidence.get("items", [])),
                 "validation_needed": True,
                 "competition_surface_proxy": None,
             }
@@ -150,6 +156,8 @@ def score_clusters(
     ranked = sorted(
         scored,
         key=lambda cluster: (
+            cluster.get("recommended_bet", False),
+            cluster.get("specificity_score", 0.0),
             cluster["evidence_strength"],
             cluster["confidence"],
             cluster["profile_fit_score"],
