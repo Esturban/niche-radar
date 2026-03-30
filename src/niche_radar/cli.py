@@ -24,6 +24,28 @@ def build_parser() -> argparse.ArgumentParser:
     discover_parser.add_argument("--with-search-console", action="store_true", help="Enable Search Console export enrichment.")
     discover_parser.add_argument("--with-keyword-planner", action="store_true", help="Enable Keyword Planner export enrichment.")
     discover_parser.add_argument("--geo", default="US", help="Geographic code for trend collection.")
+    discover_parser.add_argument(
+        "--research-depth",
+        choices=["off", "standard", "deep"],
+        default="standard",
+        help="Control the bounded post-shortlist research pass.",
+    )
+    discover_parser.add_argument(
+        "--research-top-k",
+        type=int,
+        default=3,
+        help="How many ranked niches to send through the research graph.",
+    )
+    discover_parser.add_argument(
+        "--persist-trace",
+        action="store_true",
+        help="Write debug trace artifacts for the research graph.",
+    )
+    discover_parser.add_argument(
+        "--llm-provider",
+        default="openai",
+        help="LLM provider used by the research graph. Only openai is supported in v1.",
+    )
     return parser
 
 
@@ -49,6 +71,10 @@ def main() -> int:
             geo=args.geo,
             with_search_console=args.with_search_console,
             with_keyword_planner=args.with_keyword_planner,
+            research_depth=args.research_depth,
+            research_top_k=args.research_top_k,
+            persist_trace=args.persist_trace,
+            llm_provider=args.llm_provider,
         )
         result = discover(config)
         print(f"wrote report to {result['outdir']}")
