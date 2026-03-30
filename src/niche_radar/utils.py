@@ -212,6 +212,15 @@ def shared_token_score(left: str, right: str) -> float:
     return overlap / union if union else 0.0
 
 
+def token_overlap_score(left: str, right: str) -> float:
+    left_tokens = set(content_tokens(left))
+    right_tokens = set(content_tokens(right))
+    if not left_tokens or not right_tokens:
+        return 0.0
+    overlap = len(left_tokens & right_tokens)
+    return overlap / max(1, len(right_tokens))
+
+
 def informative_phrase(phrase: str, min_tokens: int = 2, max_tokens: int = 4) -> bool:
     tokens = content_tokens(phrase)
     if len(tokens) < min_tokens or len(tokens) > max_tokens:
