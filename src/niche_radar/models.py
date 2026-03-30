@@ -16,6 +16,10 @@ class RunConfig:
     generations: int = 3
     with_search_console: bool = False
     with_keyword_planner: bool = False
+    research_depth: str = "standard"
+    research_top_k: int = 3
+    persist_trace: bool = False
+    llm_provider: str = "openai"
 
 
 @dataclass(slots=True)

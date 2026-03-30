@@ -21,6 +21,7 @@ from .narrow import attach_micro_wedges
 from .normalize import combine_provider_signals
 from .profile import extract_profile
 from .rank import score_clusters
+from .research_graph import apply_research_graph
 from .report import append_run_index, write_outputs
 from .seed import generate_seed_terms
 from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term, now_iso, shared_token_score, slugify
@@ -72,8 +73,17 @@ def discover(config: RunConfig) -> dict:
         topic=focus,
         evidence_by_cluster=evidence_by_cluster,
     )
+    ranked_clusters, research_trace = apply_research_graph(
+        ranked_clusters=ranked_clusters,
+        focus=focus,
+        research_depth=config.research_depth,
+        research_top_k=config.research_top_k,
+        evidence_pages=config.evidence_pages,
+        llm_provider=config.llm_provider,
+    )
     question_graph = build_question_graph(ranked_clusters)
     evidence = flatten_evidence(evidence_by_cluster)
+    used_evidence = _collect_used_evidence(ranked_clusters[: config.top_niches])
 
     outdir = config.outdir
     confidence_floor = min((cluster["confidence"] for cluster in ranked_clusters), default=0.0)
@@ -99,6 +109,11 @@ def discover(config: RunConfig) -> dict:
             "near_miss_count": sum(1 for cluster in ranked_clusters if not cluster.get("recommended_bet")),
             "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "not_specific_enough",
         },
+        "research_summary": {
+            "depth": config.research_depth,
+            "shortlisted": min(config.research_top_k, len(ranked_clusters)),
+            "provider": config.llm_provider,
+        },
         "confidence_floor": round(confidence_floor, 4),
         "seed_terms": seeds,
     }
@@ -109,9 +124,12 @@ def discover(config: RunConfig) -> dict:
         all_terms=all_terms,
         question_graph=question_graph,
         evidence=evidence,
+        used_evidence=used_evidence,
         provider_results=[asdict(result) for result in provider_results],
         run_meta=run_meta,
         top_niches=config.top_niches,
+        research_trace=research_trace,
+        persist_trace=config.persist_trace,
     )
     append_run_index(
         outdir.parent,
@@ -289,9 +307,7 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
     )
     (outdir / "report.md").write_text(report + "\n", encoding="utf-8")
     (outdir / "clusters.json").write_text("[]\n", encoding="utf-8")
-    (outdir / "evidence.json").write_text("[]\n", encoding="utf-8")
-    (outdir / "question_graph.json").write_text('{"nodes":[],"edges":[]}\n', encoding="utf-8")
-    (outdir / "provider_hits.json").write_text("[]\n", encoding="utf-8")
+    (outdir / "used_evidence.json").write_text("[]\n", encoding="utf-8")
     (outdir / "run_meta.json").write_text(
         json.dumps(
             {
@@ -302,12 +318,22 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
                 "profile_sources": profile_source.metadata.get("sources", []),
                 "profile_summary": profile,
                 "insufficient_signal": True,
+                "research_summary": {
+                    "depth": config.research_depth,
+                    "shortlisted": 0,
+                    "provider": config.llm_provider,
+                },
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
+    if config.persist_trace:
+        (outdir / "evidence.json").write_text("[]\n", encoding="utf-8")
+        (outdir / "question_graph.json").write_text('{"nodes":[],"edges":[]}\n', encoding="utf-8")
+        (outdir / "provider_hits.json").write_text("[]\n", encoding="utf-8")
+        (outdir / "research_trace.json").write_text('{"depth":"' + config.research_depth + '","entries":[]}\n', encoding="utf-8")
     append_run_index(
         outdir.parent,
         {
@@ -320,3 +346,11 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
         },
     )
     return {"outdir": str(outdir), "cluster_count": 0, "insufficient_signal": True}
+
+
+def _collect_used_evidence(clusters: list[dict]) -> list[dict]:
+    output: list[dict] = []
+    for cluster in clusters:
+        for item in cluster.get("used_evidence", []):
+            output.append({"cluster_id": cluster["cluster_id"], **item})
+    return output

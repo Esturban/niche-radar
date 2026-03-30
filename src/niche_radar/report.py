@@ -13,9 +13,12 @@ def write_outputs(
     all_terms: list[dict],
     question_graph: dict,
     evidence: list[dict],
+    used_evidence: list[dict],
     provider_results: list[dict],
     run_meta: dict,
     top_niches: int,
+    research_trace: dict,
+    persist_trace: bool,
 ) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     top_clusters = clusters[:top_niches]
@@ -23,13 +26,16 @@ def write_outputs(
 
     (outdir / "report.md").write_text(render_report(top_clusters, dropped_clusters, run_meta), encoding="utf-8")
     (outdir / "clusters.json").write_text(json.dumps(top_clusters, indent=2), encoding="utf-8")
-    (outdir / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
-    (outdir / "question_graph.json").write_text(json.dumps(question_graph, indent=2), encoding="utf-8")
-    (outdir / "provider_hits.json").write_text(json.dumps(provider_results, indent=2), encoding="utf-8")
+    (outdir / "used_evidence.json").write_text(json.dumps(used_evidence, indent=2), encoding="utf-8")
     (outdir / "run_meta.json").write_text(json.dumps(run_meta, indent=2), encoding="utf-8")
 
-    _write_terms_csv(outdir / "terms.csv", all_terms)
-    _write_trends_csv(outdir / "trends.csv", all_terms)
+    if persist_trace:
+        (outdir / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+        (outdir / "question_graph.json").write_text(json.dumps(question_graph, indent=2), encoding="utf-8")
+        (outdir / "provider_hits.json").write_text(json.dumps(provider_results, indent=2), encoding="utf-8")
+        (outdir / "research_trace.json").write_text(json.dumps(research_trace, indent=2), encoding="utf-8")
+        _write_terms_csv(outdir / "terms.csv", all_terms)
+        _write_trends_csv(outdir / "trends.csv", all_terms)
 
 
 def append_run_index(root: Path, record: dict) -> None:
@@ -59,6 +65,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         f"- Confidence floor: `{run_meta['confidence_floor']}`",
         f"- Recommended bets found: `{wedge_summary.get('recommended_bet_count', 0)}`",
         f"- Specificity outcome: `{wedge_summary.get('specificity_outcome', 'unknown')}`",
+        f"- Research depth: `{run_meta.get('research_summary', {}).get('depth', 'off')}`",
         "- This report tries to cut broad discovery down to 1-2 evidence-backed bets.",
         "- External evidence is the backbone. Profile fit is a filter. False precision is a failure.",
         "- It does not validate market demand, willingness to pay, or lack of saturation.",
@@ -112,6 +119,9 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
 
     for cluster in top_clusters:
         wedge = cluster.get("recommended_wedge") or ((cluster.get("micro_wedges") or [None])[0] or {})
+        default_next_action = (
+            f"Talk to 3 operators around `{wedge.get('label', cluster['title'])}` and test whether the cited problems map to active pain worth paying to fix."
+        )
         lines.extend(
             [
                 "",
@@ -126,10 +136,18 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 f"- Recency support: `{cluster['recency_support']:.2f}`",
                 f"- Specificity score: `{cluster.get('specificity_score', 0.0):.2f}`",
                 f"- Confidence: `{cluster['confidence']:.2f}`",
+                f"- Research score: `{cluster.get('research_score', 0.0):.2f}`",
                 "",
                 "### Why it fits",
                 f"- Connected roots: {', '.join(cluster['lineage_roots'])}",
                 f"- Generations represented: {', '.join(str(value) for value in cluster['generations'])}",
+                "",
+                "### Dossier verdict",
+                f"- Verdict: `{cluster.get('dossier', {}).get('verdict', 'n/a')}`",
+                f"- Why non-obvious: {cluster.get('dossier', {}).get('why_non_obvious', 'No dossier summary generated.')}",
+                f"- Demand summary: {cluster.get('dossier', {}).get('demand_summary', 'No dossier summary generated.')}",
+                f"- Search summary: {cluster.get('dossier', {}).get('search_summary', 'No dossier summary generated.')}",
+                f"- Risk summary: {cluster.get('dossier', {}).get('risk_summary', 'No dossier summary generated.')}",
                 "",
                 "### Why it surfaced externally",
                 f"- Representative terms: {', '.join(cluster['terms'][:6])}",
@@ -144,8 +162,9 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
             lines.append("- No strong question pattern surfaced from the active providers.")
 
         lines.extend(["", "### Supporting evidence"])
-        if cluster["evidence"]:
-            for item in cluster["evidence"][:5]:
+        evidence_items = cluster.get("used_evidence") or cluster.get("evidence", [])
+        if evidence_items:
+            for item in evidence_items[:5]:
                 lines.append(f"- [{item['title']}]({item['url']}): {item['snippet']}")
         else:
             lines.append("- No public evidence pages were captured for this niche in this run.")
@@ -187,7 +206,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 "- It does not prove the cluster is unsaturated.",
                 "",
                 "### Next validation step",
-                f"- Talk to 3 operators around `{wedge.get('label', cluster['title'])}` and test whether the cited problems map to active pain worth paying to fix.",
+                f"- {cluster.get('dossier', {}).get('next_action', default_next_action)}",
             ]
         )
 
