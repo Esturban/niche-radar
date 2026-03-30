@@ -117,8 +117,10 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
     assert "research_score" in clusters[0]
     run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
     assert "wedge_summary" in run_meta
-    assert run_meta["wedge_summary"]["specificity_outcome"] in {"recommended_bets_found", "not_specific_enough"}
+    assert run_meta["wedge_summary"]["specificity_outcome"] in {"recommended_bets_found", "no_data_backed_hyperniche"}
     assert run_meta["research_summary"]["depth"] == "standard"
+    assert "focus_summary" in run_meta
+    assert "evidence_summary" in run_meta
 
 
 def test_discover_persist_trace_writes_debug_artifacts(monkeypatch, tmp_path):
@@ -219,3 +221,76 @@ def test_parse_youtube_suggest_wrapper():
     parsed = _parse_youtube_suggest(payload)
     assert parsed[0] == "small business automation"
     assert parsed[1][1][0] == "small business automation software"
+
+
+def test_focus_gate_blocks_generic_small_business_recommendations(monkeypatch, tmp_path):
+    monkeypatch.setattr("niche_radar.pipeline.collect_trends", _fake_trends)
+    monkeypatch.setattr("niche_radar.pipeline.collect_autosuggest", _fake_autosuggest)
+    monkeypatch.setattr("niche_radar.pipeline.collect_youtube", _fake_youtube)
+    monkeypatch.setattr("niche_radar.pipeline.collect_evidence_search", _fake_evidence)
+    monkeypatch.setattr("niche_radar.research_graph.engine.collect_evidence_search", _fake_evidence)
+
+    config = RunConfig(
+        resume_path=Path("tests/fixtures/resume.md"),
+        site_url=None,
+        focus="shopify ecommerce",
+        outdir=tmp_path / "run",
+        top_niches=4,
+    )
+    discover(config)
+
+    clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
+    recommended = [cluster for cluster in clusters if cluster["recommended_bet"]]
+    assert recommended
+    assert all(("shopify" in cluster["title"] or "ecommerce" in cluster["title"]) for cluster in recommended)
+    assert not any(cluster["title"].startswith("small business") and cluster["recommended_bet"] for cluster in clusters)
+
+
+def test_evidence_gate_requires_cross_source_support(monkeypatch, tmp_path):
+    monkeypatch.setattr("niche_radar.pipeline.collect_trends", _fake_trends)
+    monkeypatch.setattr("niche_radar.pipeline.collect_autosuggest", _fake_autosuggest)
+    monkeypatch.setattr("niche_radar.pipeline.collect_youtube", _fake_youtube)
+
+    def weak_evidence(clusters, focus, evidence_pages):
+        output = {}
+        for cluster in clusters:
+            output[cluster["cluster_id"]] = {
+                "provider": "test_evidence",
+                "query": cluster["title_seed"],
+                "items": [
+                    {
+                        "provider": "test_evidence",
+                        "query": cluster["title_seed"],
+                        "url": f"https://example.com/{cluster['cluster_id'].replace(' ', '-')}",
+                        "title": "Generic business article",
+                        "snippet": "broad article with weak overlap",
+                        "matched_terms": [],
+                        "published_at": "2026-03-01T00:00:00+00:00",
+                        "recency_score": 1.0,
+                        "quality_score": 0.2,
+                    }
+                ],
+                "citation_count": 1,
+                "snippet_quality_raw": 0.2,
+                "recency_support_raw": 1.0,
+            }
+        return output
+
+    monkeypatch.setattr("niche_radar.pipeline.collect_evidence_search", weak_evidence)
+    monkeypatch.setattr("niche_radar.research_graph.engine.collect_evidence_search", weak_evidence)
+
+    config = RunConfig(
+        resume_path=Path("tests/fixtures/resume.md"),
+        site_url=None,
+        focus="shopify ecommerce",
+        outdir=tmp_path / "run",
+        top_niches=4,
+    )
+    discover(config)
+
+    report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
+    run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+    clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
+    assert run_meta["wedge_summary"]["recommended_bet_count"] == 0
+    assert "No data-backed hyperniche passed" in report
+    assert any(cluster["evidence_gate"] is False for cluster in clusters)

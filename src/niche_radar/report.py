@@ -47,6 +47,8 @@ def append_run_index(root: Path, record: dict) -> None:
 def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_meta: dict) -> str:
     focus = run_meta.get("focus") or "profile-driven"
     wedge_summary = run_meta.get("wedge_summary", {})
+    focus_summary = run_meta.get("focus_summary", {})
+    evidence_summary = run_meta.get("evidence_summary", {})
     source_labels = []
     if run_meta.get("resume_path"):
         source_labels.append(run_meta["resume_path"])
@@ -66,6 +68,8 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         f"- Recommended bets found: `{wedge_summary.get('recommended_bet_count', 0)}`",
         f"- Specificity outcome: `{wedge_summary.get('specificity_outcome', 'unknown')}`",
         f"- Research depth: `{run_meta.get('research_summary', {}).get('depth', 'off')}`",
+        f"- Focus gate threshold: `{focus_summary.get('threshold', 'n/a')}`",
+        f"- Evidence gate: `{', '.join(evidence_summary.get('required_types', [])) or 'n/a'}`",
         "- This report tries to cut broad discovery down to 1-2 evidence-backed bets.",
         "- External evidence is the backbone. Profile fit is a filter. False precision is a failure.",
         "- It does not validate market demand, willingness to pay, or lack of saturation.",
@@ -88,9 +92,34 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
     else:
         lines.extend(
             [
-                "- No cluster reached the specificity bar for an evidence-backed founder-style recommendation.",
-                "- The current run surfaced broad territory, but not a narrow enough bet to advise on honestly.",
+                "- No data-backed hyperniche passed both the focus and evidence gates.",
+                "- The current run surfaced candidates, but none earned a recommendation honestly.",
             ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Gate summary",
+            f"- Focus-qualified clusters: `{len(focus_summary.get('accepted_clusters', []))}`",
+            f"- Evidence-qualified clusters: `{len(evidence_summary.get('accepted_clusters', []))}`",
+        ]
+    )
+    if focus_summary.get("rejected_clusters"):
+        lines.append(
+            "- Focus rejects: "
+            + "; ".join(
+                f"{item['cluster']} ({', '.join(item.get('reasons', [])) or 'rejected'})"
+                for item in focus_summary["rejected_clusters"][:4]
+            )
+        )
+    if evidence_summary.get("rejected_clusters"):
+        lines.append(
+            "- Evidence rejects: "
+            + "; ".join(
+                f"{item['cluster']} ({', '.join(item.get('reasons', [])) or 'rejected'})"
+                for item in evidence_summary["rejected_clusters"][:4]
+            )
         )
 
     lines.extend(["", "## Near misses", ""])
@@ -98,7 +127,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         for cluster in near_misses[:4]:
             wedge = (cluster.get("micro_wedges") or [{}])[0]
             lines.append(
-                f"- {wedge.get('label', cluster['title'])}: `{wedge.get('rejection_reason', cluster.get('rejection_reason', 'not specific enough'))}`."
+                f"- {wedge.get('label', cluster['title'])}: `{'; '.join(cluster.get('recommendation_failure_reasons', [])) or wedge.get('rejection_reason', cluster.get('rejection_reason', 'not specific enough'))}`."
             )
     else:
         lines.append("- No near misses in this run.")
@@ -135,12 +164,17 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 f"- Trend strength: `{cluster['trend_strength']:.2f}`",
                 f"- Recency support: `{cluster['recency_support']:.2f}`",
                 f"- Specificity score: `{cluster.get('specificity_score', 0.0):.2f}`",
+                f"- Focus score: `{cluster.get('focus_score', 0.0):.2f}`",
+                f"- Focus gate: `{cluster.get('focus_gate', False)}`",
+                f"- Evidence gate: `{cluster.get('evidence_gate', False)}`",
+                f"- Evidence types: `{', '.join(cluster.get('evidence_types', [])) or 'none'}`",
                 f"- Confidence: `{cluster['confidence']:.2f}`",
                 f"- Research score: `{cluster.get('research_score', 0.0):.2f}`",
                 "",
                 "### Why it fits",
                 f"- Connected roots: {', '.join(cluster['lineage_roots'])}",
                 f"- Generations represented: {', '.join(str(value) for value in cluster['generations'])}",
+                f"- Recommendation status: `{'accepted' if cluster.get('recommended_bet') else 'rejected'}`",
                 "",
                 "### Dossier verdict",
                 f"- Verdict: `{cluster.get('dossier', {}).get('verdict', 'n/a')}`",
@@ -168,6 +202,17 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 lines.append(f"- [{item['title']}]({item['url']}): {item['snippet']}")
         else:
             lines.append("- No public evidence pages were captured for this niche in this run.")
+
+        lines.extend(
+            [
+                "",
+                "### Gate failures",
+            ]
+        )
+        if cluster.get("recommendation_failure_reasons"):
+            lines.extend(f"- {reason}" for reason in cluster["recommendation_failure_reasons"])
+        else:
+            lines.append("- None. This cluster cleared the recommendation gates.")
 
         lines.extend(
             [

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens
+from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, normalize_search_term
 
 SIGNAL_FAMILIES = {
     "analytics": "small business analytics",
@@ -23,10 +23,10 @@ SIGNAL_FAMILIES = {
 }
 
 
-def cluster_terms(term_states: dict[str, dict]) -> list[dict]:
+def cluster_terms(term_states: dict[str, dict], focus: str = "") -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for term, state in term_states.items():
-        grouped[_cluster_key(term)].append(state)
+        grouped[_cluster_key(term, focus)].append(state)
 
     clusters: list[dict] = []
     for cluster_id, items in grouped.items():
@@ -38,7 +38,7 @@ def cluster_terms(term_states: dict[str, dict]) -> list[dict]:
         clusters.append(
             {
                 "cluster_id": cluster_id,
-                "title_seed": _select_title_seed(items, cluster_id),
+                "title_seed": _select_title_seed(items, cluster_id, focus),
                 "terms": sorted(item["term"] for item in items),
                 "items": items,
                 "generations": generations,
@@ -68,8 +68,14 @@ def build_question_graph(clusters: list[dict]) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
-def _cluster_key(term: str) -> str:
+def _cluster_key(term: str, focus: str) -> str:
     tokens = content_tokens(term)
+    normalized_focus = normalize_search_term(focus)
+    focus_tokens = set(content_tokens(normalized_focus))
+    if focus_tokens and (set(tokens) & focus_tokens):
+        signal = next((token for token in tokens if token in DISCOVERY_SIGNAL_TOKENS and token not in focus_tokens), "")
+        return f"{normalized_focus} {signal}".strip()
+
     for token in tokens:
         if token in SIGNAL_FAMILIES:
             return SIGNAL_FAMILIES[token]
@@ -77,10 +83,13 @@ def _cluster_key(term: str) -> str:
     matching = [token for token in tokens if token in DISCOVERY_SIGNAL_TOKENS]
     if matching:
         return f"small business {matching[0]}"
-    return term
+    return normalize_search_term(term)
 
 
-def _select_title_seed(items: list[dict], cluster_id: str) -> str:
+def _select_title_seed(items: list[dict], cluster_id: str, focus: str) -> str:
+    normalized_focus = normalize_search_term(focus)
+    if normalized_focus and cluster_id.startswith(normalized_focus):
+        return cluster_id
     if cluster_id.startswith("small business"):
         return cluster_id
     preferred = sorted(

@@ -23,15 +23,27 @@ from .profile import extract_profile
 from .rank import score_clusters
 from .research_graph import apply_research_graph
 from .report import append_run_index, write_outputs
-from .seed import generate_seed_terms
-from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term, now_iso, shared_token_score, slugify
+from .seed import build_seed_plan
+from .utils import DISCOVERY_SIGNAL_TOKENS, clamp01, content_tokens, dedupe_preserve_order, normalize_search_term, now_iso, shared_token_score, slugify, token_overlap_score
+
+SEARCH_ADJACENT_PROVIDERS = {
+    "bing_autosuggest",
+    "google_suggest",
+    "google_trends",
+    "keyword_planner",
+    "search_console",
+    "youtube",
+    "youtube_suggest",
+}
+MIN_FOCUS_SCORE = 0.34
+MIN_EVIDENCE_QUALITY = 0.45
 
 
 def discover(config: RunConfig) -> dict:
     profile_source = load_profile(resume_path=config.resume_path, site_url=config.site_url)
     profile = extract_profile(profile_source.text)
     focus = config.focus or ""
-    seeds = generate_seed_terms(profile=profile, topic=focus)
+    seeds, seed_plan = build_seed_plan(profile=profile, topic=focus)
 
     generation_zero = [
         TermRecord(term=term, generation=0, source="seed", lineage_root=term)
@@ -61,7 +73,7 @@ def discover(config: RunConfig) -> dict:
     if active_provider_count == 0:
         return _write_insufficient_signal(config=config, profile=profile, profile_source=profile_source, seeds=seeds, reasons=[result.reason for result in provider_results if result.reason])
 
-    clusters = cluster_terms(all_terms_map)
+    clusters = cluster_terms(all_terms_map, focus=focus)
     initial_ranked_clusters, _ = score_clusters(clusters=clusters, profile=profile, total_generations=config.generations, topic=focus)
     evidence_candidates = initial_ranked_clusters[: max(config.top_niches * 2, config.top_niches)]
     evidence_by_cluster = collect_evidence_search(clusters=evidence_candidates, focus=focus, evidence_pages=config.evidence_pages)
@@ -81,6 +93,7 @@ def discover(config: RunConfig) -> dict:
         evidence_pages=config.evidence_pages,
         llm_provider=config.llm_provider,
     )
+    ranked_clusters, gate_summary = _apply_recommendation_gates(ranked_clusters=ranked_clusters, focus=focus)
     question_graph = build_question_graph(ranked_clusters)
     evidence = flatten_evidence(evidence_by_cluster)
     used_evidence = _collect_used_evidence(ranked_clusters[: config.top_niches])
@@ -107,12 +120,24 @@ def discover(config: RunConfig) -> dict:
             "clusters_with_wedges": sum(1 for cluster in ranked_clusters if cluster.get("micro_wedges")),
             "recommended_bet_count": recommended_bet_count,
             "near_miss_count": sum(1 for cluster in ranked_clusters if not cluster.get("recommended_bet")),
-            "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "not_specific_enough",
+            "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "no_data_backed_hyperniche",
         },
         "research_summary": {
             "depth": config.research_depth,
             "shortlisted": min(config.research_top_k, len(ranked_clusters)),
             "provider": config.llm_provider,
+        },
+        "focus_summary": {
+            "threshold": MIN_FOCUS_SCORE,
+            "accepted_seeds": seed_plan["accepted"],
+            "rejected_seeds": seed_plan["rejected"],
+            "accepted_clusters": gate_summary["focus"]["accepted"],
+            "rejected_clusters": gate_summary["focus"]["rejected"],
+        },
+        "evidence_summary": {
+            "required_types": ["search_adjacent", "external_evidence"],
+            "accepted_clusters": gate_summary["evidence"]["accepted"],
+            "rejected_clusters": gate_summary["evidence"]["rejected"],
         },
         "confidence_floor": round(confidence_floor, 4),
         "seed_terms": seeds,
@@ -354,3 +379,139 @@ def _collect_used_evidence(clusters: list[dict]) -> list[dict]:
         for item in cluster.get("used_evidence", []):
             output.append({"cluster_id": cluster["cluster_id"], **item})
     return output
+
+
+def _apply_recommendation_gates(*, ranked_clusters: list[dict], focus: str) -> tuple[list[dict], dict]:
+    gated: list[dict] = []
+    focus_accepted: list[dict] = []
+    focus_rejected: list[dict] = []
+    evidence_accepted: list[dict] = []
+    evidence_rejected: list[dict] = []
+
+    for cluster in ranked_clusters:
+        focus_result = _cluster_focus_gate(cluster=cluster, focus=focus)
+        evidence_result = _cluster_evidence_gate(cluster=cluster)
+        reasons = list(cluster.get("recommendation_failure_reasons", []))
+        if not cluster.get("recommended_wedge"):
+            reasons.append(cluster.get("rejection_reason", "not specific enough"))
+        if not focus_result["pass"]:
+            reasons.extend(focus_result["reasons"])
+        if not evidence_result["pass"]:
+            reasons.extend(evidence_result["reasons"])
+
+        updated = {
+            **cluster,
+            "base_recommended_bet": cluster.get("recommended_bet", False),
+            "focus_score": round(focus_result["score"], 4),
+            "focus_gate": focus_result["pass"],
+            "focus_hits": focus_result["hits"],
+            "evidence_gate": evidence_result["pass"],
+            "evidence_types": evidence_result["types"],
+            "evidence_quality_floor": round(evidence_result["quality_floor"], 4),
+            "recommendation_failure_reasons": dedupe_preserve_order(reasons),
+        }
+        updated["recommended_bet"] = bool(cluster.get("recommended_wedge")) and updated["focus_gate"] and updated["evidence_gate"]
+        gated.append(updated)
+
+        cluster_focus_summary = {
+            "cluster": updated["title"],
+            "focus_score": updated["focus_score"],
+            "reasons": focus_result["reasons"],
+        }
+        if updated["focus_gate"]:
+            focus_accepted.append(cluster_focus_summary)
+        else:
+            focus_rejected.append(cluster_focus_summary)
+
+        cluster_evidence_summary = {
+            "cluster": updated["title"],
+            "evidence_types": updated["evidence_types"],
+            "quality_floor": updated["evidence_quality_floor"],
+            "reasons": evidence_result["reasons"],
+        }
+        if updated["evidence_gate"]:
+            evidence_accepted.append(cluster_evidence_summary)
+        else:
+            evidence_rejected.append(cluster_evidence_summary)
+
+    reranked = sorted(
+        gated,
+        key=lambda cluster: (
+            cluster.get("recommended_bet", False),
+            cluster.get("focus_score", 0.0),
+            cluster.get("evidence_gate", False),
+            cluster.get("specificity_score", 0.0),
+            cluster.get("evidence_strength", 0.0),
+            cluster.get("confidence", 0.0),
+            cluster.get("total_score", 0.0),
+        ),
+        reverse=True,
+    )
+    return reranked, {
+        "focus": {"accepted": focus_accepted, "rejected": focus_rejected},
+        "evidence": {"accepted": evidence_accepted, "rejected": evidence_rejected},
+    }
+
+
+def _cluster_focus_gate(*, cluster: dict, focus: str) -> dict:
+    if not focus.strip():
+        return {"pass": True, "score": 1.0, "reasons": [], "hits": []}
+
+    title_score = token_overlap_score(cluster.get("title_seed", ""), focus)
+    term_hits = [term for term in cluster.get("terms", []) if token_overlap_score(term, focus) > 0]
+    related_hits = [term for term in cluster.get("related_terms", [])[:8] if token_overlap_score(term, focus) > 0]
+    evidence_items = cluster.get("used_evidence") or cluster.get("evidence", [])
+    evidence_hits = [
+        item.get("title") or item.get("url") or "evidence"
+        for item in evidence_items
+        if token_overlap_score(f"{item.get('title', '')} {item.get('snippet', '')}", focus) > 0
+    ]
+
+    term_score = len(term_hits) / max(1, min(len(cluster.get("terms", [])), 6))
+    related_score = len(related_hits) / max(1, min(len(cluster.get("related_terms", [])), 6))
+    evidence_score = len(evidence_hits) / max(1, len(evidence_items)) if evidence_items else 0.0
+    score = clamp01((title_score * 0.5) + (term_score * 0.3) + (related_score * 0.1) + (evidence_score * 0.1))
+
+    reasons: list[str] = []
+    if title_score <= 0:
+        reasons.append("title does not retain focus tokens")
+    if score < MIN_FOCUS_SCORE:
+        reasons.append("focus adherence below threshold")
+    return {
+        "pass": title_score > 0 and score >= MIN_FOCUS_SCORE,
+        "score": score,
+        "reasons": reasons,
+        "hits": term_hits[:4] + related_hits[:2] + evidence_hits[:2],
+    }
+
+
+def _cluster_evidence_gate(*, cluster: dict) -> dict:
+    provider_set = {provider for item in cluster.get("items", []) for provider in item.get("providers", [])}
+    evidence_items = cluster.get("evidence", [])
+    strong_citations = [
+        item
+        for item in evidence_items
+        if float(item.get("quality_score", 0.0)) >= MIN_EVIDENCE_QUALITY and len(item.get("matched_terms", [])) >= 1
+    ]
+
+    evidence_types: list[str] = []
+    if provider_set & SEARCH_ADJACENT_PROVIDERS:
+        evidence_types.append("search_adjacent")
+    if "google_trends" in provider_set:
+        evidence_types.append("trend")
+    if strong_citations:
+        evidence_types.append("external_evidence")
+
+    reasons: list[str] = []
+    if "search_adjacent" not in evidence_types:
+        reasons.append("missing search-adjacent evidence")
+    if "external_evidence" not in evidence_types:
+        reasons.append("missing strong external evidence")
+
+    quality_floor = min((float(item.get("quality_score", 0.0)) for item in strong_citations), default=0.0)
+    return {
+        "pass": "search_adjacent" in evidence_types and "external_evidence" in evidence_types and len(evidence_types) >= 2,
+        "types": evidence_types,
+        "quality_floor": quality_floor,
+        "reasons": reasons,
+    }
