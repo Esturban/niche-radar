@@ -79,7 +79,7 @@ set +a
 - `better signal`: `pip install -e .[dev,trends]`
   Adds `pytrends` support for Google Trends collection. Useful if you want momentum data, but still best-effort.
 - `optional expansion`: `pip install -e .[dev,llm]`
-  Adds OpenAI-backed term expansion. Useful when you want more creative adjacent ideas.
+  Adds OpenAI-backed term expansion. The default OpenAI runtime uses `gpt-5.4-nano` with `xhigh` reasoning for broader adjacent ideas.
 
 ## Usage
 
@@ -137,7 +137,7 @@ Time estimates are intentionally rough:
 | Bing Autosuggest API | Replaces Google Suggest fallback with Bing Autosuggest results. | No | `10-20 min` | `25-45 min` | Overview: [learn.microsoft.com/en-us/previous-versions/bing/search-apis/bing-autosuggest/overview](https://learn.microsoft.com/en-us/previous-versions/bing/search-apis/bing-autosuggest/overview). Python quickstart: [learn.microsoft.com/en-us/previous-versions/bing/search-apis/bing-autosuggest/quickstarts/rest/python](https://learn.microsoft.com/en-us/previous-versions/bing/search-apis/bing-autosuggest/quickstarts/rest/python). Pricing/subscription entry: [aka.ms/bingsearchapipricing](https://aka.ms/bingsearchapipricing). | Microsoft marks this content as retired / no longer supported. Treat it as legacy only. New users should usually skip this and use the Google Suggest fallback. |
 | Search Console export | Injects first-party search queries from your own verified site. This is useful when you already have a site with real traffic. | No | `5-15 min` | `30-90+ min` | Search Console: [search.google.com/search-console](https://search.google.com/search-console). Property verification help: [support.google.com/webmasters/answer/9008080](https://support.google.com/webmasters/answer/9008080). API quickstart background: [developers.google.com/webmaster-tools/v1/quickstart/quickstart-python](https://developers.google.com/webmaster-tools/v1/quickstart/quickstart-python). | This repo does not use the Search Console API directly. It expects a local CSV/JSON export path in `SEARCH_CONSOLE_EXPORT`. If you do not already have a verified property with useful data, skip this at first. |
 | Keyword Planner export | Adds exported keyword volume / competition style data to the term set. Useful when you already work inside Google Ads. | No | `10-20 min` | `45-120+ min` | Keyword Planning overview: [developers.google.com/google-ads/api/docs/keyword-planning/overview](https://developers.google.com/google-ads/api/docs/keyword-planning/overview). Keyword Planner help: [support.google.com/google-ads/answer/7337243](https://support.google.com/google-ads/answer/7337243). Google Ads home: [ads.google.com](https://ads.google.com). | This repo does not call the Google Ads API directly. It expects a local CSV/JSON export path in `KEYWORD_PLANNER_EXPORT`. If you do not already use Google Ads, this is usually not worth the setup for a first run. |
-| OpenAI | Generates additional adjacent niche phrases beyond the heuristic expansion rules. | No | `5-10 min` | `10-20 min` | Quickstart: [developers.openai.com/api/docs/quickstart](https://developers.openai.com/api/docs/quickstart). Create key: [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Billing: [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview). | For this repo you only need `OPENAI_API_KEY` and `pip install -e .[dev,llm]`. It improves idea breadth, but it is not required for the workflow to function. |
+| OpenAI | Generates additional adjacent niche phrases beyond the heuristic expansion rules. | No | `5-10 min` | `10-20 min` | Quickstart: [developers.openai.com/api/docs/quickstart](https://developers.openai.com/api/docs/quickstart). Create key: [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Billing: [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview). | For this repo you only need `OPENAI_API_KEY` and `pip install -e .[dev,llm]`. The default OpenAI runtime is `gpt-5.4-nano` with `xhigh` reasoning, and you can override that with `NICHE_RADAR_OPENAI_MODEL` or `NICHE_RADAR_OPENAI_REASONING`. |
 
 ### What each integration actually buys you
 
@@ -166,6 +166,8 @@ The repo reads these variables directly:
 - `SEARCH_CONSOLE_EXPORT`
 - `KEYWORD_PLANNER_EXPORT`
 - `OPENAI_API_KEY`
+- `NICHE_RADAR_OPENAI_MODEL`
+- `NICHE_RADAR_OPENAI_REASONING`
 
 Minimal practical `.env` examples:
 
@@ -174,6 +176,8 @@ Minimal practical `.env` examples:
 YOU_API_KEY=...
 YOUTUBE_API_KEY=...
 OPENAI_API_KEY=...
+NICHE_RADAR_OPENAI_MODEL=gpt-5.4-nano
+NICHE_RADAR_OPENAI_REASONING=xhigh
 ```
 
 ```bash
@@ -189,6 +193,12 @@ set -a
 source .env
 set +a
 ```
+
+OpenAI runtime defaults:
+
+- model: `gpt-5.4-nano`
+- reasoning effort: `xhigh`
+- to lower cost or latency later, set `NICHE_RADAR_OPENAI_REASONING=high`
 
 ## Suggested setup order
 

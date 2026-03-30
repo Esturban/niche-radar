@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-llm = ["openai>=1.35.0"]
+llm = ["openai>=2.0.0"]
 trends = ["pytrends>=4.9.2"]
 dev = ["pytest>=8.2.0"]
 
@@ -26,4 +26,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

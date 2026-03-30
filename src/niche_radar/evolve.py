@@ -6,6 +6,10 @@ from collections import defaultdict
 from .models import TermRecord
 from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term
 
+_DEFAULT_OPENAI_MODEL = "gpt-5.4-nano"
+_DEFAULT_REASONING_EFFORT = "xhigh"
+_ALLOWED_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
+
 
 def expand_terms(
     records: list[TermRecord],
@@ -69,17 +73,40 @@ def _maybe_llm_expand(base: str, topic: str, keyword_pool: list[str]) -> list[st
     )
 
     try:
+        model = _resolve_openai_model()
+        request: dict[str, object] = {
+            "model": model,
+            "input": prompt,
+            "max_output_tokens": 200,
+        }
+        reasoning_effort = _resolve_reasoning_effort()
+        if _supports_reasoning(model):
+            request["reasoning"] = {"effort": reasoning_effort}
+
         client = OpenAI(api_key=api_key)
-        response = client.responses.create(
-            model=os.getenv("NICHE_RADAR_OPENAI_MODEL", "gpt-4.1-mini"),
-            input=prompt,
-            max_output_tokens=200,
-        )
+        response = client.responses.create(**request)
     except Exception:
         return []
 
     text = getattr(response, "output_text", "") or ""
     return [line.strip("- ").strip() for line in text.splitlines() if line.strip()]
+
+
+def _resolve_openai_model() -> str:
+    model = os.getenv("NICHE_RADAR_OPENAI_MODEL", _DEFAULT_OPENAI_MODEL).strip()
+    return model or _DEFAULT_OPENAI_MODEL
+
+
+def _resolve_reasoning_effort() -> str:
+    value = os.getenv("NICHE_RADAR_OPENAI_REASONING", _DEFAULT_REASONING_EFFORT).strip().lower()
+    if value in _ALLOWED_REASONING_EFFORTS:
+        return value
+    return _DEFAULT_REASONING_EFFORT
+
+
+def _supports_reasoning(model: str) -> bool:
+    normalized = model.strip().lower()
+    return normalized.startswith(("gpt-5", "o"))
 
 
 def lineage_generations(records: list[TermRecord]) -> dict[str, set[int]]:
