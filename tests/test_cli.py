@@ -12,6 +12,10 @@ def test_parser_accepts_discover_command():
     assert args.command == "discover"
     assert args.top_niches == 5
     assert args.topic == "creator education"
+    assert args.research_depth == "standard"
+    assert args.research_top_k == 3
+    assert args.persist_trace is False
+    assert args.llm_provider == "openai"
 
 
 def test_load_resume_reads_markdown_fixture():
