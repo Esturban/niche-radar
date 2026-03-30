@@ -18,6 +18,14 @@ def test_parser_accepts_discover_command():
     assert args.llm_provider == "openai"
 
 
+def test_parser_accepts_compare_runs_command():
+    parser = build_parser()
+    args = parser.parse_args(["compare-runs", "--left", "runs/a", "--right", "runs/b"])
+    assert args.command == "compare-runs"
+    assert args.left == Path("runs/a")
+    assert args.right == Path("runs/b")
+
+
 def test_load_resume_reads_markdown_fixture():
     text = load_resume(Path("tests/fixtures/resume.md"))
     assert "analytics workflows" in text

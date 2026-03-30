@@ -23,6 +23,13 @@ Think of the pipeline as a staged assistant:
 6. It ranks clusters by evidence strength, specificity, and profile fit.
 7. It writes a human-readable report plus supporting artifacts.
 
+Recommendation contract:
+
+- A niche is only recommended when it clears both the focus gate and the evidence gate.
+- Focus gate: the ranked cluster must retain the requested niche tokens.
+- Evidence gate: the ranked cluster must have cross-source support, including search-adjacent signal plus strong public evidence pages.
+- If no cluster clears both gates, the run still completes, but the report explicitly says no data-backed hyperniche passed.
+
 In practice, each provider has a specific job:
 
 - Google Suggest: cheap baseline query expansion when you have no keys
@@ -116,6 +123,16 @@ Compatibility notes:
 - `--topic` is still accepted as a deprecated alias for `--focus`
 - `--max-clusters` is still accepted as a deprecated alias for `--top-niches`
 - at least one of `--resume` or `--site` is required
+
+Compare two previous runs:
+
+```bash
+niche-radar compare-runs \
+  --left runs/2026-03-30T044739+0000-small-business-operations \
+  --right runs/2026-03-30T045151+0000-shopify-ecommerce
+```
+
+This prints the top-cluster delta plus focus/evidence gate deltas so you can verify that a changed focus materially changed the output.
 
 ## Provider setup guide
 
