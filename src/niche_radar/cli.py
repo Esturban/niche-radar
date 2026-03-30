@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .compare import compare_runs
 from .models import RunConfig
 from .pipeline import discover
 from .utils import now_iso, slugify
@@ -46,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="openai",
         help="LLM provider used by the research graph. Only openai is supported in v1.",
     )
+
+    compare_parser = subparsers.add_parser("compare-runs", help="Compare two previous run directories.")
+    compare_parser.add_argument("--left", type=Path, required=True, help="Left run directory.")
+    compare_parser.add_argument("--right", type=Path, required=True, help="Right run directory.")
     return parser
 
 
@@ -80,6 +85,10 @@ def main() -> int:
         print(f"wrote report to {result['outdir']}")
         if result["insufficient_signal"]:
             print("run completed with insufficient live signal; see report.md for details.")
+        return 0
+
+    if args.command == "compare-runs":
+        print(compare_runs(left=args.left, right=args.right), end="")
         return 0
 
     parser.error("unknown command")
