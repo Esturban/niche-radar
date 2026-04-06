@@ -16,6 +16,17 @@ def test_parser_accepts_discover_command():
     assert args.research_top_k == 3
     assert args.persist_trace is False
     assert args.llm_provider == "openai"
+    assert args.brief is None
+
+
+def test_parser_accepts_optional_brief():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["discover", "--resume", "tests/fixtures/resume.md", "--focus", "shopify ecommerce", "--brief", "service businesses"]
+    )
+
+    assert args.command == "discover"
+    assert args.brief == "service businesses"
 
 
 def test_parser_accepts_compare_runs_command():
