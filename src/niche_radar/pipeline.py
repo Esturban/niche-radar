@@ -21,6 +21,7 @@ from .narrow import attach_micro_wedges
 from .normalize import combine_provider_signals
 from .profile import extract_profile
 from .rank import score_clusters
+from .recommend import apply_recommendation_policy, build_recommendation_context
 from .research_graph import apply_research_graph
 from .report import append_run_index, write_outputs
 from .seed import build_seed_plan
@@ -43,6 +44,7 @@ def discover(config: RunConfig) -> dict:
     profile_source = load_profile(resume_path=config.resume_path, site_url=config.site_url)
     profile = extract_profile(profile_source.text)
     focus = config.focus or ""
+    recommendation_context = build_recommendation_context(focus=focus, brief=config.brief)
     seeds, seed_plan = build_seed_plan(profile=profile, topic=focus)
 
     generation_zero = [
@@ -94,6 +96,10 @@ def discover(config: RunConfig) -> dict:
         llm_provider=config.llm_provider,
     )
     ranked_clusters, gate_summary = _apply_recommendation_gates(ranked_clusters=ranked_clusters, focus=focus)
+    ranked_clusters, policy_summary = apply_recommendation_policy(
+        ranked_clusters=ranked_clusters,
+        context=recommendation_context,
+    )
     question_graph = build_question_graph(ranked_clusters)
     evidence = flatten_evidence(evidence_by_cluster)
     used_evidence = _collect_used_evidence(ranked_clusters[: config.top_niches])
@@ -111,8 +117,14 @@ def discover(config: RunConfig) -> dict:
             "keywords": profile.get("keywords", [])[:10],
             "phrases": profile.get("phrases", [])[:8],
         },
+        "run_schema_version": policy_summary["run_schema_version"],
+        "policy_version": policy_summary["policy_version"],
+        "recommendation_context": policy_summary["recommendation_context"],
+        "brief_influence": policy_summary["brief_influence"],
+        "recommended_cluster_id": policy_summary["recommended_cluster_id"],
+        "recommended_cluster_title": policy_summary["recommended_cluster_title"],
         "provider_statuses": [asdict(result) for result in provider_results],
-        "evidence_summary": {
+        "evidence_collection_summary": {
             "clusters_evaluated": len(evidence_candidates),
             "citations_collected": len(evidence),
         },
@@ -120,7 +132,7 @@ def discover(config: RunConfig) -> dict:
             "clusters_with_wedges": sum(1 for cluster in ranked_clusters if cluster.get("micro_wedges")),
             "recommended_bet_count": recommended_bet_count,
             "near_miss_count": sum(1 for cluster in ranked_clusters if not cluster.get("recommended_bet")),
-            "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "no_data_backed_hyperniche",
+                "specificity_outcome": "recommended_bets_found" if recommended_bet_count else "no_data_backed_hyperniche",
         },
         "research_summary": {
             "depth": config.research_depth,
@@ -135,7 +147,7 @@ def discover(config: RunConfig) -> dict:
             "rejected_clusters": gate_summary["focus"]["rejected"],
         },
         "evidence_summary": {
-            "required_types": ["search_adjacent", "external_evidence"],
+                "required_types": ["search_adjacent", "external_evidence"],
             "accepted_clusters": gate_summary["evidence"]["accepted"],
             "rejected_clusters": gate_summary["evidence"]["rejected"],
         },
@@ -337,9 +349,21 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
         json.dumps(
             {
                 "generated_at": now_iso(),
+                "run_schema_version": 2,
+                "policy_version": "founder_wedge_v1",
                 "resume_path": str(config.resume_path) if config.resume_path else None,
                 "site_url": config.site_url,
                 "focus": config.focus,
+                "recommendation_context": build_recommendation_context(focus=config.focus, brief=config.brief),
+                "brief_influence": {
+                    "applied": bool(config.brief.strip()),
+                    "mode": "tiebreak_and_narrative_only",
+                    "baseline_recommended_cluster_id": None,
+                    "winner_changed": False,
+                    "selected_brief_alignment_score": 0.0,
+                },
+                "recommended_cluster_id": None,
+                "recommended_cluster_title": None,
                 "profile_sources": profile_source.metadata.get("sources", []),
                 "profile_summary": profile,
                 "insufficient_signal": True,

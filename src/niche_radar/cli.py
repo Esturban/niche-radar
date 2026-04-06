@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover_parser.add_argument("--site", help="Optional website URL to use as a profile source.")
     discover_parser.add_argument("--focus", help="Optional niche bias to guide ranking and term expansion.")
     discover_parser.add_argument("--topic", help="Deprecated alias for --focus.")
+    discover_parser.add_argument("--brief", help="Optional plain-language founder brief to guide recommendation tie-breaks.")
     discover_parser.add_argument("--outdir", type=Path, help="Optional output directory.")
     discover_parser.add_argument("--top-niches", type=int, default=5, help="Max ranked niches to highlight.")
     discover_parser.add_argument("--max-clusters", type=int, help="Deprecated alias for --top-niches.")
@@ -70,6 +71,7 @@ def main() -> int:
             resume_path=args.resume,
             site_url=args.site,
             focus=focus,
+            brief=args.brief or "",
             outdir=outdir,
             top_niches=top_niches,
             evidence_pages=args.evidence_pages,

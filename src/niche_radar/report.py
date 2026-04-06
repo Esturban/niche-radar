@@ -49,14 +49,15 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
     wedge_summary = run_meta.get("wedge_summary", {})
     focus_summary = run_meta.get("focus_summary", {})
     evidence_summary = run_meta.get("evidence_summary", {})
+    recommendation_context = run_meta.get("recommendation_context", {})
+    highlighted = _resolve_highlighted_cluster(top_clusters=top_clusters, run_meta=run_meta)
     source_labels = []
     if run_meta.get("resume_path"):
         source_labels.append(run_meta["resume_path"])
     if run_meta.get("site_url"):
         source_labels.append(run_meta["site_url"])
 
-    recommended = [cluster for cluster in top_clusters if cluster.get("recommended_bet")][:2]
-    near_misses = [cluster for cluster in top_clusters if not cluster.get("recommended_bet")]
+    near_misses = [cluster for cluster in top_clusters if cluster.get("cluster_id") != run_meta.get("recommended_cluster_id")]
 
     lines = [
         "# niche-radar report",
@@ -64,36 +65,47 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         "## Executive summary",
         f"- Focus bias: `{focus}`",
         f"- Profile sources: `{', '.join(source_labels) if source_labels else 'profile-driven'}`",
+        f"- Policy version: `{run_meta.get('policy_version', 'n/a')}`",
         f"- Confidence floor: `{run_meta['confidence_floor']}`",
         f"- Recommended bets found: `{wedge_summary.get('recommended_bet_count', 0)}`",
         f"- Specificity outcome: `{wedge_summary.get('specificity_outcome', 'unknown')}`",
         f"- Research depth: `{run_meta.get('research_summary', {}).get('depth', 'off')}`",
         f"- Focus gate threshold: `{focus_summary.get('threshold', 'n/a')}`",
         f"- Evidence gate: `{', '.join(evidence_summary.get('required_types', [])) or 'n/a'}`",
-        "- This report tries to cut broad discovery down to 1-2 evidence-backed bets.",
+        f"- Highlighted recommendation: `{run_meta.get('recommended_cluster_title') or 'no-call'}`",
         "- External evidence is the backbone. Profile fit is a filter. False precision is a failure.",
         "- It does not validate market demand, willingness to pay, or lack of saturation.",
         "",
-        "## Recommended bets",
+        "## Founder context",
         "",
     ]
-    if recommended:
+    if recommendation_context.get("brief"):
+        lines.append(f"- Founder brief: `{recommendation_context['brief']}`")
+        if run_meta.get("brief_influence", {}).get("winner_changed"):
+            lines.append("- Brief influence: `winner changed only after evidence, specificity, and profile-fit tie-breaks remained close.`")
+        else:
+            lines.append("- Brief influence: `narrative/tie-break only; it did not overpower stronger evidence.`")
+    else:
+        lines.append("- Founder brief: `none provided`")
+
+    lines.extend(["", "## Recommended wedge", ""])
+    if highlighted:
+        wedge = highlighted.get("recommended_wedge") or {}
         lines.extend(
             [
-                "| Bet | Evidence | Specificity | Confidence |",
-                "|---|---:|---:|---:|",
+                f"- Wedge: `{wedge.get('label', highlighted['title'])}`",
+                f"- Why it won: strongest evidence-backed candidate after applying policy `{run_meta.get('policy_version', 'n/a')}`.",
+                f"- Evidence: `{highlighted['evidence_strength']:.2f}` ({highlighted['evidence_tier']})",
+                f"- Specificity: `{highlighted.get('specificity_score', 0.0):.2f}`",
+                f"- Profile fit: `{highlighted['profile_fit_score']:.2f}`",
+                f"- Brief alignment: `{highlighted.get('brief_alignment_score', 0.0):.2f}`",
             ]
         )
-        for cluster in recommended:
-            wedge = cluster.get("recommended_wedge") or {}
-            lines.append(
-                f"| {wedge.get('label', cluster['title'])} | {cluster['evidence_strength']:.2f} ({cluster['evidence_tier']}) | {cluster.get('specificity_score', 0.0):.2f} | {cluster['confidence']:.2f} |"
-            )
     else:
         lines.extend(
             [
                 "- No data-backed hyperniche passed both the focus and evidence gates.",
-                "- The current run surfaced candidates, but none earned a recommendation honestly.",
+                "- This run is an explicit no-call. The tool surfaced candidates, but none earned a highlighted recommendation honestly.",
             ]
         )
 
@@ -167,6 +179,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 f"- Focus score: `{cluster.get('focus_score', 0.0):.2f}`",
                 f"- Focus gate: `{cluster.get('focus_gate', False)}`",
                 f"- Evidence gate: `{cluster.get('evidence_gate', False)}`",
+                f"- Brief alignment score: `{cluster.get('brief_alignment_score', 0.0):.2f}`",
                 f"- Evidence types: `{', '.join(cluster.get('evidence_types', [])) or 'none'}`",
                 f"- Confidence: `{cluster['confidence']:.2f}`",
                 f"- Research score: `{cluster.get('research_score', 0.0):.2f}`",
@@ -174,7 +187,7 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
                 "### Why it fits",
                 f"- Connected roots: {', '.join(cluster['lineage_roots'])}",
                 f"- Generations represented: {', '.join(str(value) for value in cluster['generations'])}",
-                f"- Recommendation status: `{'accepted' if cluster.get('recommended_bet') else 'rejected'}`",
+                f"- Recommendation status: `{_recommendation_status(cluster=cluster, run_meta=run_meta)}`",
                 "",
                 "### Dossier verdict",
                 f"- Verdict: `{cluster.get('dossier', {}).get('verdict', 'n/a')}`",
@@ -265,6 +278,21 @@ def render_report(top_clusters: list[dict], dropped_clusters: list[dict], run_me
         lines.append("- No dropped clusters in this run.")
 
     return "\n".join(lines) + "\n"
+
+
+def _resolve_highlighted_cluster(*, top_clusters: list[dict], run_meta: dict) -> dict | None:
+    highlighted_id = run_meta.get("recommended_cluster_id")
+    if highlighted_id:
+        return next((cluster for cluster in top_clusters if cluster.get("cluster_id") == highlighted_id), None)
+    return None
+
+
+def _recommendation_status(*, cluster: dict, run_meta: dict) -> str:
+    if cluster.get("cluster_id") == run_meta.get("recommended_cluster_id"):
+        return "highlighted"
+    if cluster.get("recommended_bet"):
+        return "gate-passed"
+    return "rejected"
 
 
 def _write_terms_csv(path: Path, all_terms: list[dict]) -> None:

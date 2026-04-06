@@ -18,8 +18,16 @@ def compare_runs(left: Path, right: Path, top_n: int = 5) -> str:
         "",
         f"- Left run: `{left}`",
         f"- Right run: `{right}`",
+        f"- Left schema: `{left_meta.get('run_schema_version', 'n/a')}`",
+        f"- Right schema: `{right_meta.get('run_schema_version', 'n/a')}`",
+        f"- Left policy: `{left_meta.get('policy_version', 'n/a')}`",
+        f"- Right policy: `{right_meta.get('policy_version', 'n/a')}`",
         f"- Left focus: `{left_meta.get('focus') or 'profile-driven'}`",
         f"- Right focus: `{right_meta.get('focus') or 'profile-driven'}`",
+        f"- Left brief: `{_context_brief(left_meta)}`",
+        f"- Right brief: `{_context_brief(right_meta)}`",
+        f"- Left highlighted recommendation: `{left_meta.get('recommended_cluster_title', 'n/a')}`",
+        f"- Right highlighted recommendation: `{right_meta.get('recommended_cluster_title', 'n/a')}`",
         "",
         "## Top cluster delta",
         f"- Added on right: `{', '.join(added) if added else 'none'}`",
@@ -29,6 +37,7 @@ def compare_runs(left: Path, right: Path, top_n: int = 5) -> str:
         _gate_line("Focus-qualified clusters", left_meta, right_meta, "focus_summary", "accepted_clusters"),
         _gate_line("Evidence-qualified clusters", left_meta, right_meta, "evidence_summary", "accepted_clusters"),
         _gate_line("Recommended bets", left_meta, right_meta, "wedge_summary", "recommended_bet_count"),
+        f"- Brief changed winner: `{left_meta.get('brief_influence', {}).get('winner_changed', 'n/a')}` -> `{right_meta.get('brief_influence', {}).get('winner_changed', 'n/a')}`",
         "",
         "## Right run top clusters",
     ]
@@ -58,3 +67,8 @@ def _resolve_gate_value(run_meta: dict, section: str, field: str) -> int:
     if isinstance(value, list):
         return len(value)
     return int(value or 0)
+
+
+def _context_brief(run_meta: dict) -> str:
+    brief = run_meta.get("recommendation_context", {}).get("brief")
+    return brief or "n/a"
