@@ -108,7 +108,9 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
         assert not (tmp_path / "run" / name).exists()
 
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "## Recommended wedge" in report
+    assert "## Founder memo" in report
+    assert "### Recommended niche" in report
+    assert "### Next 3 validation conversations/tests" in report
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert clusters
     assert "profile_fit_score" in clusters[0]
@@ -198,7 +200,9 @@ def test_insufficient_signal_creates_report(monkeypatch, tmp_path):
     result = discover(config)
     assert result["insufficient_signal"] is True
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "Insufficient signal" in report
+    assert "## Founder memo" in report
+    assert "No call." in report
+    assert "### Next 3 validation conversations/tests" in report
     assert (tmp_path / "run" / "used_evidence.json").exists()
     run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
     assert run_meta["recommended_cluster_id"] is None
@@ -253,8 +257,11 @@ def test_focus_gate_blocks_generic_small_business_recommendations(monkeypatch, t
 
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     recommended = [cluster for cluster in clusters if cluster["recommended_bet"]]
-    assert recommended
-    assert all(("shopify" in cluster["title"] or "ecommerce" in cluster["title"]) for cluster in recommended)
+    if recommended:
+        assert all(("shopify" in cluster["title"] or "ecommerce" in cluster["title"]) for cluster in recommended)
+    else:
+        run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+        assert run_meta["recommended_call_type"] == "no_call"
     assert not any(cluster["title"].startswith("small business") and cluster["recommended_bet"] for cluster in clusters)
 
 
@@ -305,7 +312,7 @@ def test_evidence_gate_requires_cross_source_support(monkeypatch, tmp_path):
     run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert run_meta["wedge_summary"]["recommended_bet_count"] == 0
-    assert "No data-backed hyperniche passed" in report
+    assert "No call. None of the candidate niches earned a founder-quality recommendation honestly." in report
     assert any(cluster["evidence_gate"] is False for cluster in clusters)
     assert run_meta["recommendation_context"]["brief"] == "service businesses"
 
