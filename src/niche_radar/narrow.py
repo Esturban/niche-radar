@@ -2,6 +2,15 @@ from __future__ import annotations
 
 import re
 
+from .signal_quality import (
+    GENERIC_PARENT_TOKENS,
+    PACKAGING_TOKENS,
+    TRUSTED_SIGNAL_CLASSES,
+    classify_signal_text,
+    founder_core_tokens,
+    is_generic_parent_phrase,
+    is_packaging_heavy,
+)
 from .utils import INTENT_MARKERS, clamp01, content_tokens, normalize_search_term, shared_token_score
 
 MAX_WEDGES_PER_CLUSTER = 2
@@ -20,7 +29,7 @@ CONTEXT_STOPWORDS = {
     "team",
     "teams",
 }
-WORKFLOW_STOPWORDS = CONTEXT_STOPWORDS | set(INTENT_MARKERS) | {"ideas", "reddit"}
+WORKFLOW_STOPWORDS = CONTEXT_STOPWORDS | set(INTENT_MARKERS) | {"ideas", "reddit"} | GENERIC_PARENT_TOKENS | PACKAGING_TOKENS
 OFFER_MAP = {
     "consultant": "service offer",
     "service": "service offer",
@@ -87,6 +96,7 @@ def _derive_micro_wedges(cluster: dict, evidence_items: list[dict]) -> list[dict
                 "suggested_offer": offer,
                 "supporting_terms": [],
                 "supporting_questions": [],
+                "trusted_support": [],
                 "source_kinds": set(),
                 "raw_support": [],
             },
@@ -97,6 +107,14 @@ def _derive_micro_wedges(cluster: dict, evidence_items: list[dict]) -> list[dict
             entry["supporting_questions"].append(normalized)
         else:
             entry["supporting_terms"].append(normalized)
+        if source_kind == "question" and normalized in cluster.get("trusted_questions", []):
+            entry["trusted_support"].append(normalized)
+        elif source_kind == "related" and normalized in cluster.get("trusted_related_terms", []):
+            entry["trusted_support"].append(normalized)
+        elif source_kind in {"root", "term"} and normalized in cluster.get("trusted_terms", []):
+            entry["trusted_support"].append(normalized)
+        elif classify_signal_text(normalized) in TRUSTED_SIGNAL_CLASSES:
+            entry["trusted_support"].append(normalized)
 
     if not candidates:
         return [_placeholder_candidate(cluster)]
@@ -130,9 +148,13 @@ def _score_candidate(entry: dict, cluster: dict, cluster_tokens: set[str], evide
     source_diversity = len(entry["source_kinds"]) / 4
     repetition_score = min(1.0, raw_support_count / 3)
     evidence_refs = _match_evidence(label_tokens=label_tokens, workflow=entry["workflow_or_pain"], evidence_items=evidence_items)
+    trusted_evidence_refs = [item for item in evidence_refs if item.get("signal_class") in TRUSTED_SIGNAL_CLASSES]
     evidence_support = min(1.0, len(evidence_refs) / 2)
     lexical_penalty = 0.22 if shared_token_score(label, cluster["title_seed"]) >= 0.85 and extra_detail <= 1 else 0.0
     evidence_penalty = 0.28 if not evidence_refs else 0.0
+    packaging_penalty = 0.28 if is_packaging_heavy(label) else 0.0
+    generic_penalty = 0.30 if is_generic_parent_phrase(label) or is_generic_parent_phrase(entry["workflow_or_pain"]) else 0.0
+    trusted_support = min(1.0, len(entry["trusted_support"]) / 2)
 
     specificity_score = clamp01(
         source_diversity * 0.22
@@ -142,15 +164,26 @@ def _score_candidate(entry: dict, cluster: dict, cluster_tokens: set[str], evide
         + evidence_support * 0.32
         - lexical_penalty
         - evidence_penalty
+        - packaging_penalty
+        - generic_penalty
     )
 
-    rejection_reason = None
+    rejection_reasons: list[str] = []
     if not evidence_refs:
-        rejection_reason = "weak evidence"
-    elif lexical_penalty > 0:
-        rejection_reason = "too broad"
-    elif specificity_score < MIN_SPECIFICITY_SCORE:
-        rejection_reason = "low specificity"
+        rejection_reasons.append("weak evidence")
+    if not trusted_evidence_refs:
+        rejection_reasons.append("weak trusted evidence")
+    if not founder_core_tokens(entry["workflow_or_pain"]):
+        rejection_reasons.append("missing concrete workflow")
+    if packaging_penalty > 0:
+        rejection_reasons.append("packaging-heavy")
+    if generic_penalty > 0 or lexical_penalty > 0:
+        rejection_reasons.append("too broad")
+    if trusted_support == 0.0:
+        rejection_reasons.append("missing trusted signal")
+    if specificity_score < MIN_SPECIFICITY_SCORE:
+        rejection_reasons.append("low specificity")
+    rejection_reason = rejection_reasons[0] if rejection_reasons else None
 
     advice = _build_advice(
         label=label,
@@ -165,9 +198,15 @@ def _score_candidate(entry: dict, cluster: dict, cluster_tokens: set[str], evide
         "supporting_terms": entry["supporting_terms"][:4],
         "supporting_questions": entry["supporting_questions"][:4],
         "evidence_refs": evidence_refs,
+        "trusted_evidence_refs": trusted_evidence_refs,
+        "trusted_support": entry["trusted_support"][:4],
         "specificity_score": round(specificity_score, 4),
         "advice": advice,
         "rejection_reason": rejection_reason,
+        "founder_rejection_reasons": rejection_reasons,
+        "founder_ready": not rejection_reasons,
+        "packaging_penalty": round(packaging_penalty, 4),
+        "generic_penalty": round(generic_penalty, 4),
         "source_kinds": sorted(entry["source_kinds"]),
     }
 
@@ -190,6 +229,8 @@ def _match_evidence(label_tokens: set[str], workflow: str, evidence_items: list[
             {
                 "title": item.get("title"),
                 "url": item.get("url"),
+                "signal_class": item.get("signal_class")
+                or classify_signal_text(f"{item.get('title', '')} {item.get('snippet', '')}"),
             }
         )
         if len(matches) >= 3:
@@ -199,21 +240,28 @@ def _match_evidence(label_tokens: set[str], workflow: str, evidence_items: list[
 
 def _source_texts(cluster: dict) -> list[tuple[str, str]]:
     output: list[tuple[str, str]] = []
+    trusted_terms = cluster.get("trusted_terms") or cluster.get("terms", [])
+    trusted_related_terms = cluster.get("trusted_related_terms") or cluster.get("related_terms", [])
+    trusted_questions = cluster.get("trusted_questions") or cluster.get("questions", [])
+    supporting_related_terms = cluster.get("supporting_related_terms") or cluster.get("related_terms", [])
+
+    for value in trusted_terms[:6]:
+        output.append(("term", value))
+    for value in trusted_related_terms[:8]:
+        output.append(("related", value))
+    for value in trusted_questions[:8]:
+        output.append(("question", value))
+    for value in supporting_related_terms[:6]:
+        output.append(("related", value))
     for value in cluster.get("lineage_roots", []):
         output.append(("root", value))
-    for value in cluster.get("terms", [])[:10]:
-        output.append(("term", value))
-    for value in cluster.get("related_terms", [])[:12]:
-        output.append(("related", value))
-    for value in cluster.get("questions", [])[:10]:
-        output.append(("question", value))
     return output
 
 
 def _extract_workflow_or_pain(text: str, fallback: str) -> str:
-    tokens = [token for token in content_tokens(text) if token not in WORKFLOW_STOPWORDS]
+    tokens = [token for token in founder_core_tokens(text) if token not in WORKFLOW_STOPWORDS]
     if not tokens:
-        tokens = [token for token in content_tokens(fallback) if token not in WORKFLOW_STOPWORDS]
+        tokens = [token for token in founder_core_tokens(fallback) if token not in WORKFLOW_STOPWORDS]
     if not tokens:
         return ""
     return " ".join(tokens[:4])
@@ -272,6 +320,6 @@ def _placeholder_candidate(cluster: dict) -> dict:
         "evidence_refs": [],
         "specificity_score": 0.0,
         "advice": f"`{cluster['title_seed']}` is not specific enough to advise on honestly.",
-        "rejection_reason": "not specific enough",
+        "rejection_reason": "too broad",
         "source_kinds": [],
     }

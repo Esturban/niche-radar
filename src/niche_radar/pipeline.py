@@ -23,8 +23,9 @@ from .profile import extract_profile
 from .rank import score_clusters
 from .recommend import apply_recommendation_policy, build_recommendation_context
 from .research_graph import apply_research_graph
-from .report import append_run_index, write_outputs
+from .report import append_run_index, render_insufficient_signal_report, write_outputs
 from .seed import build_seed_plan
+from .signal_quality import classify_signal_text
 from .utils import DISCOVERY_SIGNAL_TOKENS, clamp01, content_tokens, dedupe_preserve_order, normalize_search_term, now_iso, shared_token_score, slugify, token_overlap_score
 
 SEARCH_ADJACENT_PROVIDERS = {
@@ -48,7 +49,7 @@ def discover(config: RunConfig) -> dict:
     seeds, seed_plan = build_seed_plan(profile=profile, topic=focus)
 
     generation_zero = [
-        TermRecord(term=term, generation=0, source="seed", lineage_root=term)
+        TermRecord(term=term, generation=0, source="seed", lineage_root=term, signal_class=classify_signal_text(term))
         for term in seeds
     ]
     generation_one = expand_terms(records=generation_zero, topic=focus, profile=profile, generation=1)
@@ -119,6 +120,10 @@ def discover(config: RunConfig) -> dict:
         },
         "run_schema_version": policy_summary["run_schema_version"],
         "policy_version": policy_summary["policy_version"],
+        "recommended_call_type": policy_summary["recommended_call_type"],
+        "founder_readiness_score": policy_summary["founder_readiness_score"],
+        "founder_rejection_reasons": policy_summary["founder_rejection_reasons"],
+        "trusted_signal_summary": policy_summary["trusted_signal_summary"],
         "recommendation_context": policy_summary["recommendation_context"],
         "brief_influence": policy_summary["brief_influence"],
         "recommended_cluster_id": policy_summary["recommended_cluster_id"],
@@ -310,6 +315,7 @@ def _select_survivors(term_states: dict[str, dict], limit: int) -> list[TermReco
             source=item["source"],
             lineage_root=item["lineage_root"],
             parent_term=item["parent_term"],
+            signal_class=item.get("signal_class", classify_signal_text(item["term"])),
         )
         for item in scored[:limit]
     ]
@@ -321,28 +327,8 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
     outdir = config.outdir
     focus = config.focus or "profile-driven"
     outdir.mkdir(parents=True, exist_ok=True)
-    report = "\n".join(
-        [
-            "# niche-radar report",
-            "",
-            "## Insufficient signal",
-            "- No external providers returned enough live signal to rank niches honestly.",
-            "- This run did not force a winner.",
-            "",
-            "## Focus",
-            f"- `{focus}`",
-            "",
-            "## Seed terms attempted",
-            *[f"- {seed}" for seed in seeds],
-            "",
-            "## Why the run degraded",
-            *[f"- {reason}" for reason in reasons if reason],
-            "",
-            "## Next step",
-            "- Enable a free provider such as pytrends, Bing Autosuggest, or YouTube Data API and rerun.",
-        ]
-    )
-    (outdir / "report.md").write_text(report + "\n", encoding="utf-8")
+    report = render_insufficient_signal_report(focus=focus, seeds=seeds, reasons=reasons, brief=config.brief)
+    (outdir / "report.md").write_text(report, encoding="utf-8")
     (outdir / "clusters.json").write_text("[]\n", encoding="utf-8")
     (outdir / "used_evidence.json").write_text("[]\n", encoding="utf-8")
     (outdir / "run_meta.json").write_text(
@@ -364,6 +350,10 @@ def _write_insufficient_signal(config: RunConfig, profile: dict, profile_source,
                 },
                 "recommended_cluster_id": None,
                 "recommended_cluster_title": None,
+                "recommended_call_type": "no_call",
+                "founder_readiness_score": 0.0,
+                "founder_rejection_reasons": ["insufficient signal"],
+                "trusted_signal_summary": {},
                 "profile_sources": profile_source.metadata.get("sources", []),
                 "profile_summary": profile,
                 "insufficient_signal": True,
