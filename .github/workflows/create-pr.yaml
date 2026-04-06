@@ -7,11 +7,39 @@ on:
   schedule:
     - cron: '0 6 * * *'
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   pull-request:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - name: ensure labels
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: |
+        ensure_label() {
+          local name="$1"
+          local color="$2"
+          local description="$3"
+
+          if gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' | grep -Fxq "$name"; then
+            echo "Label already exists: $name"
+            return 0
+          fi
+
+          gh label create "$name" \
+            --repo "$REPO" \
+            --color "$color" \
+            --description "$description"
+        }
+
+        ensure_label "auto-pr" "1d76db" "Automatically created pull requests"
+        ensure_label "staging" "fbca04" "Changes promoted from dev toward master"
     - name: pull-request
       uses: repo-sync/pull-request@v2
       with:
