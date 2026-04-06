@@ -40,3 +40,4 @@ class TermRecord:
     source: str
     lineage_root: str
     parent_term: str | None = None
+    signal_class: str = "supporting_artifact"

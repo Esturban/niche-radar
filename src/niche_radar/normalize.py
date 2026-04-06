@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .models import ProviderResult, TermRecord
+from .signal_quality import classify_signal_text
 from .utils import is_question_like
 
 
@@ -12,6 +13,7 @@ def combine_provider_signals(records: list[TermRecord], provider_results: list[P
             "lineage_root": record.lineage_root,
             "parent_term": record.parent_term,
             "source": record.source,
+            "signal_class": record.signal_class,
             "hits": [],
             "providers": set(),
             "degraded_reasons": [],
@@ -35,7 +37,13 @@ def combine_provider_signals(records: list[TermRecord], provider_results: list[P
                 continue
             combined[term]["providers"].add(provider_result.provider)
             for hit in hits:
-                combined[term]["hits"].append({"provider": provider_result.provider, **hit})
+                combined[term]["hits"].append(
+                    {
+                        "provider": provider_result.provider,
+                        "signal_class": classify_signal_text(hit.get("text", "")),
+                        **hit,
+                    }
+                )
 
     for term_data in combined.values():
         hits = term_data["hits"]
@@ -47,4 +55,3 @@ def combine_provider_signals(records: list[TermRecord], provider_results: list[P
         term_data["providers"] = sorted(term_data["providers"])
 
     return combined
-

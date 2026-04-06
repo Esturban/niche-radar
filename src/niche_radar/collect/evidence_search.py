@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import requests
 
 from ..ingest import fetch_page
+from ..signal_quality import TRUSTED_SIGNAL_CLASSES, classify_evidence_snippet
 from ..utils import clamp01, content_tokens, safe_mean
 
 DUCKDUCKGO_HTML_ENDPOINT = "https://html.duckduckgo.com/html/"
@@ -147,11 +148,15 @@ def _collect_duckduckgo_evidence(clusters: list[dict], focus: str, evidence_page
 
 
 def _summarize_evidence(evidence_items: list[dict]) -> dict:
+    trusted_items = [item for item in evidence_items if item.get("signal_class") in TRUSTED_SIGNAL_CLASSES]
+    supporting_items = [item for item in evidence_items if item.get("signal_class") not in TRUSTED_SIGNAL_CLASSES]
     return {
         "items": evidence_items,
         "citation_count": len(evidence_items),
         "snippet_quality_raw": safe_mean(item.get("quality_score", 0.0) for item in evidence_items),
         "recency_support_raw": safe_mean(item.get("recency_score", 0.0) for item in evidence_items if item.get("recency_score") is not None),
+        "trusted_evidence_count": len(trusted_items),
+        "supporting_evidence_count": len(supporting_items),
     }
 
 
@@ -190,6 +195,7 @@ def _build_evidence_items(provider: str, query: str, raw_results: list[dict], ev
                 "published_at": result.get("page_age"),
                 "recency_score": _recency_score(result.get("page_age")),
                 "quality_score": round(quality_score, 4),
+                "signal_class": classify_evidence_snippet(snippet),
             }
         )
 

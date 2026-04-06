@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from .signal_quality import summarize_signal_groups
 from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, normalize_search_term
 
 SIGNAL_FAMILIES = {
@@ -35,6 +36,11 @@ def cluster_terms(term_states: dict[str, dict], focus: str = "") -> list[dict]:
         related_terms = sorted({hit.get("text") for hit in all_hits if hit.get("text")})
         generations = sorted({item["generation"] for item in items})
         lineage_roots = sorted({item["lineage_root"] for item in items})
+        signal_summary = summarize_signal_groups(
+            terms=sorted(item["term"] for item in items),
+            questions=sorted({hit.get("text") for hit in question_hits if hit.get("text")}),
+            related_terms=related_terms,
+        )
         clusters.append(
             {
                 "cluster_id": cluster_id,
@@ -45,6 +51,7 @@ def cluster_terms(term_states: dict[str, dict], focus: str = "") -> list[dict]:
                 "lineage_roots": lineage_roots,
                 "questions": sorted({hit.get("text") for hit in question_hits if hit.get("text")}),
                 "related_terms": related_terms,
+                **signal_summary,
             }
         )
 
