@@ -10,6 +10,7 @@ It helps a solo operator or small SMB answer questions like:
 - What is narrow enough to test next, instead of staying at a vague market level?
 
 It does not validate demand, willingness to pay, or competition directly. It gives you a faster way to collect early directional evidence before you talk to users.
+It can also accept an optional founder brief to help break ties and explain why one wedge surfaced, but that brief does not override stronger evidence.
 
 ## What this tool does for you
 
@@ -22,6 +23,13 @@ Think of the pipeline as a staged assistant:
 5. It gathers supporting evidence pages from the public web.
 6. It ranks clusters by evidence strength, specificity, and profile fit.
 7. It writes a human-readable report plus supporting artifacts.
+
+The report contract is opinionated:
+
+- it highlights one recommendation when a niche clears the gates honestly
+- it keeps the ranked set for inspection in `clusters.json`
+- it explains near-misses instead of pretending every top cluster is equally actionable
+- it outputs an explicit no-call when the evidence is too weak
 
 Recommendation contract:
 
@@ -51,7 +59,8 @@ pip install -e .[dev]
 
 niche-radar discover \
   --resume /path/to/resume.md \
-  --focus "small business operations"
+  --focus "small business operations" \
+  --brief "I want a narrow workflow wedge I can test with service businesses this month."
 ```
 
 This gets you a usable run with no API keys at all. The CLI writes a timestamped folder under `runs/`. Open `report.md` first.
@@ -95,7 +104,8 @@ Resume-based profile input:
 ```bash
 niche-radar discover \
   --resume /path/to/resume.md \
-  --focus "small business operations"
+  --focus "small business operations" \
+  --brief "I want a narrow workflow wedge I can test with service businesses this month."
 ```
 
 Website-based profile input:
@@ -113,6 +123,7 @@ niche-radar discover \
   --resume /path/to/resume.pdf \
   --site https://example.com \
   --focus "creator education" \
+  --brief "Prefer workflow-heavy wedges I can test before writing software." \
   --evidence-pages 3 \
   --with-search-console \
   --with-keyword-planner
@@ -122,6 +133,7 @@ Compatibility notes:
 
 - `--topic` is still accepted as a deprecated alias for `--focus`
 - `--max-clusters` is still accepted as a deprecated alias for `--top-niches`
+- `--brief` is optional and only affects recommendation tie-breaks/report narrative
 - at least one of `--resume` or `--site` is required
 
 Compare two previous runs:
@@ -132,7 +144,7 @@ niche-radar compare-runs \
   --right runs/2026-03-30T045151+0000-shopify-ecommerce
 ```
 
-This prints the top-cluster delta plus focus/evidence gate deltas so you can verify that a changed focus materially changed the output.
+This prints the top-cluster delta plus focus/evidence gate deltas, and for newer runs it also shows policy/context deltas such as the founder brief and highlighted recommendation.
 
 ## Provider setup guide
 
