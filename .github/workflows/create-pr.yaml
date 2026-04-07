@@ -7,11 +7,39 @@ on:
   schedule:
     - cron: '0 6 * * *'
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   pull-request:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: ensure labels
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: |
+        ensure_label() {
+          local name="$1"
+          local color="$2"
+          local description="$3"
+
+          if gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' | grep -Fxq "$name"; then
+            echo "Label already exists: $name"
+            return 0
+          fi
+
+          gh label create "$name" \
+            --repo "$REPO" \
+            --color "$color" \
+            --description "$description"
+        }
+
+        ensure_label "auto-pr" "1d76db" "Automatically created pull requests"
+        ensure_label "staging" "fbca04" "Changes promoted from dev toward master"
     - name: pull-request
       uses: repo-sync/pull-request@v2
       with:
@@ -19,8 +47,17 @@ jobs:
         destination_branch: "master"                      # If blank, default: master
         pr_title: "Pulling ${{ github.ref }} into master" # Title of pull request
         pr_body: ":crown:* An automated PR*    \n These are the updates and changes to the development branch"              # Full markdown support, requires pr_title to be set
-        pr_reviewer: "Esturban"                         # Comma-separated list (no spaces)
-        pr_assignee: "Esturban"                         # Comma-separated list (no spaces)
-        pr_label: "auto-pr, staging"                               # Comma-separated list (no spaces)
+        pr_label: "auto-pr,staging"                                # Comma-separated list (no spaces)
         pr_allow_empty: true                              # Creates pull request even if there are no changes
         github_token: ${{ secrets.GITHUB_TOKEN }}
+    - name: request review
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        BRANCH_NAME: ${{ github.ref_name }}
+      run: |
+        gh pr edit "$BRANCH_NAME" \
+          --repo "$REPO" \
+          --add-reviewer "Esturban" \
+          --add-assignee "Esturban" \
+          --add-label "auto-pr,staging"

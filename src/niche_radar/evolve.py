@@ -4,6 +4,7 @@ import os
 from collections import defaultdict
 
 from .models import TermRecord
+from .signal_quality import classify_signal_text
 from .utils import DISCOVERY_SIGNAL_TOKENS, content_tokens, dedupe_preserve_order, normalize_search_term
 
 _DEFAULT_OPENAI_MODEL = "gpt-5.4-nano"
@@ -41,6 +42,7 @@ def expand_terms(
                     source="llm" if term in llm_terms else "heuristic",
                     lineage_root=record.lineage_root,
                     parent_term=record.term,
+                    signal_class=classify_signal_text(term),
                 )
             )
 

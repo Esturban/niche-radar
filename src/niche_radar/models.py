@@ -9,6 +9,7 @@ class RunConfig:
     resume_path: Path | None
     site_url: str | None
     focus: str
+    brief: str
     outdir: Path
     top_niches: int = 5
     evidence_pages: int = 3
@@ -39,3 +40,4 @@ class TermRecord:
     source: str
     lineage_root: str
     parent_term: str | None = None
+    signal_class: str = "supporting_artifact"

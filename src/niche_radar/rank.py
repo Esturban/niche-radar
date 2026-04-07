@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .evolve import lineage_generations
+from .signal_quality import is_generic_parent_phrase
 from .utils import clamp01, content_tokens, minmax_scale, safe_mean
 
 
@@ -41,6 +42,11 @@ def score_clusters(
     raw_recency: dict[str, float] = {}
     raw_surface_count: dict[str, float] = {}
     raw_specificity: dict[str, float] = {}
+    raw_trusted_signal: dict[str, float] = {}
+    raw_supporting_signal: dict[str, float] = {}
+    raw_noise_penalty: dict[str, float] = {}
+    raw_packaging_penalty: dict[str, float] = {}
+    raw_trusted_evidence: dict[str, float] = {}
 
     for cluster in clusters:
         cluster_id = cluster["cluster_id"]
@@ -61,6 +67,12 @@ def score_clusters(
         raw_evidence_quality[cluster_id] = float(evidence.get("snippet_quality_raw", 0.0))
         raw_recency[cluster_id] = float(evidence.get("recency_support_raw", 0.0))
         raw_specificity[cluster_id] = float(cluster.get("specificity_score", 0.0))
+        raw_trusted_signal[cluster_id] = float(cluster.get("trusted_signal_score", 0.0))
+        raw_supporting_signal[cluster_id] = float(cluster.get("supporting_signal_score", 0.0))
+        raw_noise_penalty[cluster_id] = float(cluster.get("noise_penalty", 0.0))
+        raw_packaging_penalty[cluster_id] = float(cluster.get("packaging_penalty", 0.0))
+        citation_count = max(1, int(evidence.get("citation_count", 0)))
+        raw_trusted_evidence[cluster_id] = float(evidence.get("trusted_evidence_count", 0)) / citation_count
         context_hits = 0
         context_total = 0
         for value in cluster["terms"] + cluster["related_terms"][:10] + cluster["questions"][:6]:
@@ -86,6 +98,11 @@ def score_clusters(
     recency = {key: clamp01(value) for key, value in raw_recency.items()}
     surface_count = minmax_scale(raw_surface_count)
     specificity = {key: clamp01(value) for key, value in raw_specificity.items()}
+    trusted_signal = {key: clamp01(value) for key, value in raw_trusted_signal.items()}
+    supporting_signal = {key: clamp01(value) for key, value in raw_supporting_signal.items()}
+    noise_penalty = {key: clamp01(value) for key, value in raw_noise_penalty.items()}
+    packaging_penalty = {key: clamp01(value) for key, value in raw_packaging_penalty.items()}
+    trusted_evidence = {key: clamp01(value) for key, value in raw_trusted_evidence.items()}
 
     scored: list[dict] = []
     for cluster in clusters:
@@ -108,8 +125,9 @@ def score_clusters(
                 + survival.get(cluster_id, 0.0)
                 + context.get(cluster_id, 0.0)
                 + specificity.get(cluster_id, 0.0)
+                + trusted_signal.get(cluster_id, 0.0)
             )
-            / 8
+            / 9
         )
         total_score = clamp01(
             evidence_strength * 0.28
@@ -122,6 +140,29 @@ def score_clusters(
             + adjacency.get(cluster_id, 0.0) * 0.04
             + question.get(cluster_id, 0.0) * 0.04
             + surface.get(cluster_id, 0.0) * 0.04
+        )
+        founder_rejection_reasons: list[str] = list(cluster.get("founder_rejection_reasons", []))
+        if trusted_signal.get(cluster_id, 0.0) < 0.25:
+            founder_rejection_reasons.append("not enough trusted workflow signal")
+        if trusted_evidence.get(cluster_id, 0.0) <= 0.0:
+            founder_rejection_reasons.append("no trusted evidence anchors")
+        if is_generic_parent_phrase(cluster.get("title_seed", "")):
+            founder_rejection_reasons.append("generic parent cluster")
+        founder_rejection_reasons = list(dict.fromkeys(founder_rejection_reasons))
+        founder_readiness = clamp01(
+            trusted_signal.get(cluster_id, 0.0) * 0.34
+            + trusted_evidence.get(cluster_id, 0.0) * 0.26
+            + specificity.get(cluster_id, 0.0) * 0.18
+            + evidence_strength * 0.12
+            + fit.get(cluster_id, 0.0) * 0.06
+            + context.get(cluster_id, 0.0) * 0.04
+            - packaging_penalty.get(cluster_id, 0.0) * 0.22
+            - noise_penalty.get(cluster_id, 0.0) * 0.28
+        )
+        founder_recommendable = (
+            bool(cluster.get("recommended_bet"))
+            and not founder_rejection_reasons
+            and founder_readiness >= 0.58
         )
         scored.append(
             {
@@ -145,6 +186,14 @@ def score_clusters(
                 "trend_support": round(strength.get(cluster_id, 0.0), 4),
                 "recency_support": round(recency.get(cluster_id, 0.0), 4),
                 "specificity_score": round(specificity.get(cluster_id, 0.0), 4),
+                "trusted_signal_score": round(trusted_signal.get(cluster_id, 0.0), 4),
+                "supporting_signal_score": round(supporting_signal.get(cluster_id, 0.0), 4),
+                "noise_penalty": round(noise_penalty.get(cluster_id, 0.0), 4),
+                "packaging_penalty": round(packaging_penalty.get(cluster_id, 0.0), 4),
+                "founder_readiness_score": round(founder_readiness, 4),
+                "founder_recommendable": founder_recommendable,
+                "founder_rejection_reasons": founder_rejection_reasons,
+                "trusted_evidence_count": int(evidence.get("trusted_evidence_count", 0)),
                 "confidence": round(confidence, 4),
                 "total_score": round(total_score, 4),
                 "suggested_wedge": (cluster.get("recommended_wedge") or {}).get("advice") or _suggested_wedge(cluster, evidence.get("items", [])),
@@ -156,7 +205,8 @@ def score_clusters(
     ranked = sorted(
         scored,
         key=lambda cluster: (
-            cluster.get("recommended_bet", False),
+            cluster.get("founder_recommendable", False),
+            cluster.get("founder_readiness_score", 0.0),
             cluster.get("specificity_score", 0.0),
             cluster["evidence_strength"],
             cluster["confidence"],

@@ -1,6 +1,6 @@
 # niche-radar
 
-`niche-radar` is a free-first niche discovery CLI for narrowing broad experience into a small set of evidence-backed niche bets.
+`niche-radar` is a founder-facing niche discovery CLI for narrowing broad experience into a small set of evidence-backed wedges worth testing.
 
 It helps a solo operator or small SMB answer questions like:
 
@@ -10,6 +10,9 @@ It helps a solo operator or small SMB answer questions like:
 - What is narrow enough to test next, instead of staying at a vague market level?
 
 It does not validate demand, willingness to pay, or competition directly. It gives you a faster way to collect early directional evidence before you talk to users.
+The main output is a founder-facing decision memo with an appendix of supporting evidence, not just a ranked score dump.
+It can also accept an optional founder brief to help break ties and explain why one wedge surfaced, but that brief does not override stronger evidence.
+It now prefers an explicit no-call over a fake precise recommendation.
 
 ## What this tool does for you
 
@@ -20,15 +23,26 @@ Think of the pipeline as a staged assistant:
 3. It expands those terms using heuristics and optionally OpenAI.
 4. It queries search-adjacent surfaces like Google Suggest, YouTube, and optionally Trends/Bing.
 5. It gathers supporting evidence pages from the public web.
-6. It ranks clusters by evidence strength, specificity, and profile fit.
-7. It writes a human-readable report plus supporting artifacts.
+6. It ranks clusters by trusted workflow signal, founder readiness, evidence strength, specificity, and profile fit.
+7. It writes a founder-readable report plus supporting artifacts.
+
+The report contract is opinionated:
+
+- it opens with a founder decision memo: the niche, who has the pain, why it is worth testing, and what to do next
+- it highlights one recommendation when a niche clears the gates honestly
+- it filters packaging and noise terms out of the founder-facing recommendation path
+- it keeps the ranked set for inspection in `clusters.json`
+- it explains near-misses instead of pretending every top cluster is equally actionable
+- it outputs an explicit no-call when the evidence is too weak
+- it keeps the detailed evidence, citations, and cluster-by-cluster deep dives in the appendix section of the same `report.md`
 
 Recommendation contract:
 
 - A niche is only recommended when it clears both the focus gate and the evidence gate.
+- A niche is only highlighted when it also clears founder-readiness checks: credible ICP, credible painful workflow, and trusted evidence anchors.
 - Focus gate: the ranked cluster must retain the requested niche tokens.
 - Evidence gate: the ranked cluster must have cross-source support, including search-adjacent signal plus strong public evidence pages.
-- If no cluster clears both gates, the run still completes, but the report explicitly says no data-backed hyperniche passed.
+- If no cluster clears those bars, the run still completes, but the report explicitly returns no-call instead of forcing a broad niche.
 
 In practice, each provider has a specific job:
 
@@ -51,10 +65,11 @@ pip install -e .[dev]
 
 niche-radar discover \
   --resume /path/to/resume.md \
-  --focus "small business operations"
+  --focus "small business operations" \
+  --brief "I want a narrow workflow wedge I can test with service businesses this month."
 ```
 
-This gets you a usable run with no API keys at all. The CLI writes a timestamped folder under `runs/`. Open `report.md` first.
+This gets you a usable run with no API keys at all. The CLI writes a timestamped folder under `runs/`. Open `report.md` first. The top of the file should read like a founder memo. The lower appendix is where the rawer cluster and citation detail lives.
 
 Estimated time:
 
@@ -95,7 +110,8 @@ Resume-based profile input:
 ```bash
 niche-radar discover \
   --resume /path/to/resume.md \
-  --focus "small business operations"
+  --focus "small business operations" \
+  --brief "I want a narrow workflow wedge I can test with service businesses this month."
 ```
 
 Website-based profile input:
@@ -113,6 +129,7 @@ niche-radar discover \
   --resume /path/to/resume.pdf \
   --site https://example.com \
   --focus "creator education" \
+  --brief "Prefer workflow-heavy wedges I can test before writing software." \
   --evidence-pages 3 \
   --with-search-console \
   --with-keyword-planner
@@ -122,6 +139,7 @@ Compatibility notes:
 
 - `--topic` is still accepted as a deprecated alias for `--focus`
 - `--max-clusters` is still accepted as a deprecated alias for `--top-niches`
+- `--brief` is optional and only affects recommendation tie-breaks/report narrative
 - at least one of `--resume` or `--site` is required
 
 Compare two previous runs:
@@ -132,7 +150,30 @@ niche-radar compare-runs \
   --right runs/2026-03-30T045151+0000-shopify-ecommerce
 ```
 
-This prints the top-cluster delta plus focus/evidence gate deltas so you can verify that a changed focus materially changed the output.
+This prints the top-cluster delta plus focus/evidence gate deltas, and for newer runs it also shows policy/context deltas such as the founder brief and highlighted recommendation.
+
+## What “worth testing” means here
+
+`niche-radar` does not claim a niche is validated.
+
+When the report says something is worth testing, it means the public evidence suggests:
+
+- a recurring painful workflow keeps showing up
+- people repeatedly patch the workflow with exports, spreadsheets, manual cleanup, or workaround behavior
+- multiple evidence pages point at the same operational job to be done
+
+The founder memo intentionally ignores packaging-heavy noise like:
+
+- consultants
+- software engineer / jobs
+- generic templates as the niche itself
+
+It does **not** mean:
+
+- proven willingness to pay
+- proven urgency
+- low competition
+- guaranteed market size
 
 ## Provider setup guide
 

@@ -83,6 +83,7 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="small business operations",
+        brief="service businesses",
         outdir=tmp_path / "run",
         top_niches=4,
     )
@@ -107,7 +108,9 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
         assert not (tmp_path / "run" / name).exists()
 
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "## Recommended bets" in report
+    assert "## Founder memo" in report
+    assert "### Recommended niche" in report
+    assert "### Next 3 validation conversations/tests" in report
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert clusters
     assert "profile_fit_score" in clusters[0]
@@ -121,6 +124,10 @@ def test_discover_writes_expected_artifacts(monkeypatch, tmp_path):
     assert run_meta["research_summary"]["depth"] == "standard"
     assert "focus_summary" in run_meta
     assert "evidence_summary" in run_meta
+    assert run_meta["run_schema_version"] == 2
+    assert run_meta["policy_version"] == "founder_wedge_v1"
+    assert run_meta["recommendation_context"]["brief"] == "service businesses"
+    assert "recommended_cluster_id" in run_meta
 
 
 def test_discover_persist_trace_writes_debug_artifacts(monkeypatch, tmp_path):
@@ -134,6 +141,7 @@ def test_discover_persist_trace_writes_debug_artifacts(monkeypatch, tmp_path):
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="small business operations",
+        brief="",
         outdir=tmp_path / "run",
         top_niches=4,
         persist_trace=True,
@@ -161,6 +169,7 @@ def test_discover_research_off_skips_dossier_stage(monkeypatch, tmp_path):
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="small business operations",
+        brief="",
         outdir=tmp_path / "run",
         top_niches=4,
         research_depth="off",
@@ -184,14 +193,20 @@ def test_insufficient_signal_creates_report(monkeypatch, tmp_path):
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="operations automation",
+        brief="service businesses",
         outdir=tmp_path / "run",
         top_niches=4,
     )
     result = discover(config)
     assert result["insufficient_signal"] is True
     report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
-    assert "Insufficient signal" in report
+    assert "## Founder memo" in report
+    assert "No call." in report
+    assert "### Next 3 validation conversations/tests" in report
     assert (tmp_path / "run" / "used_evidence.json").exists()
+    run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+    assert run_meta["recommended_cluster_id"] is None
+    assert run_meta["recommendation_context"]["brief"] == "service businesses"
 
 
 def test_cluster_terms_split_operator_signals():
@@ -234,6 +249,7 @@ def test_focus_gate_blocks_generic_small_business_recommendations(monkeypatch, t
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="shopify ecommerce",
+        brief="",
         outdir=tmp_path / "run",
         top_niches=4,
     )
@@ -241,8 +257,11 @@ def test_focus_gate_blocks_generic_small_business_recommendations(monkeypatch, t
 
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     recommended = [cluster for cluster in clusters if cluster["recommended_bet"]]
-    assert recommended
-    assert all(("shopify" in cluster["title"] or "ecommerce" in cluster["title"]) for cluster in recommended)
+    if recommended:
+        assert all(("shopify" in cluster["title"] or "ecommerce" in cluster["title"]) for cluster in recommended)
+    else:
+        run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+        assert run_meta["recommended_call_type"] == "no_call"
     assert not any(cluster["title"].startswith("small business") and cluster["recommended_bet"] for cluster in clusters)
 
 
@@ -283,6 +302,7 @@ def test_evidence_gate_requires_cross_source_support(monkeypatch, tmp_path):
         resume_path=Path("tests/fixtures/resume.md"),
         site_url=None,
         focus="shopify ecommerce",
+        brief="  service businesses  ",
         outdir=tmp_path / "run",
         top_niches=4,
     )
@@ -292,5 +312,29 @@ def test_evidence_gate_requires_cross_source_support(monkeypatch, tmp_path):
     run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
     clusters = json.loads((tmp_path / "run" / "clusters.json").read_text(encoding="utf-8"))
     assert run_meta["wedge_summary"]["recommended_bet_count"] == 0
-    assert "No data-backed hyperniche passed" in report
+    assert "No call. None of the candidate niches earned a founder-quality recommendation honestly." in report
     assert any(cluster["evidence_gate"] is False for cluster in clusters)
+    assert run_meta["recommendation_context"]["brief"] == "service businesses"
+
+
+def test_discover_blank_brief_normalizes_to_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr("niche_radar.pipeline.collect_trends", _fake_trends)
+    monkeypatch.setattr("niche_radar.pipeline.collect_autosuggest", _fake_autosuggest)
+    monkeypatch.setattr("niche_radar.pipeline.collect_youtube", _fake_youtube)
+    monkeypatch.setattr("niche_radar.pipeline.collect_evidence_search", _fake_evidence)
+    monkeypatch.setattr("niche_radar.research_graph.engine.collect_evidence_search", _fake_evidence)
+
+    config = RunConfig(
+        resume_path=Path("tests/fixtures/resume.md"),
+        site_url=None,
+        focus="small business operations",
+        brief="   ",
+        outdir=tmp_path / "run",
+        top_niches=4,
+    )
+    discover(config)
+
+    run_meta = json.loads((tmp_path / "run" / "run_meta.json").read_text(encoding="utf-8"))
+    report = (tmp_path / "run" / "report.md").read_text(encoding="utf-8")
+    assert run_meta["recommendation_context"]["brief"] == ""
+    assert "Founder brief: `none provided`" in report
