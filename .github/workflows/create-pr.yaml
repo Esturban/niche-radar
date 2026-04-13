@@ -43,9 +43,9 @@ jobs:
     - name: pull-request
       uses: repo-sync/pull-request@v2
       with:
-        source_branch: ""                                 # If blank, default: triggered branch
+        source_branch: "dev"                              # Scheduled runs must always promote dev -> master
         destination_branch: "master"                      # If blank, default: master
-        pr_title: "Pulling ${{ github.ref }} into master" # Title of pull request
+        pr_title: "Pulling refs/heads/dev into master"    # Title of pull request
         pr_body: ":crown:* An automated PR*    \n These are the updates and changes to the development branch"              # Full markdown support, requires pr_title to be set
         pr_label: "auto-pr,staging"                                # Comma-separated list (no spaces)
         pr_allow_empty: true                              # Creates pull request even if there are no changes
@@ -54,7 +54,7 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
-        BRANCH_NAME: ${{ github.ref_name }}
+        BRANCH_NAME: dev
       run: |
         gh pr edit "$BRANCH_NAME" \
           --repo "$REPO" \
