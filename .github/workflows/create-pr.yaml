@@ -46,11 +46,11 @@ jobs:
       id: diff
       run: |
         git fetch origin dev master
-        ahead_count="$(git rev-list --right-only --count origin/master...origin/dev)"
+        ahead_count="$(git cherry origin/master origin/dev | grep -c '^+' || true)"
 
         if [ "$ahead_count" -gt 0 ]; then
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          echo "Found $ahead_count dev commit(s) not yet in master."
+          echo "Found $ahead_count dev patch(es) not yet in master."
         else
           echo "has_changes=false" >> "$GITHUB_OUTPUT"
           echo "No changes to promote from dev to master."
