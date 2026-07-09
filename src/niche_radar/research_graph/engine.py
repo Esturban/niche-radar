@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from ..collect import collect_evidence_search
-from ..utils import clamp01, content_tokens, dedupe_preserve_order
+from ..utils import clamp01, dedupe_preserve_order
 from .provider import make_research_provider
 
 DEPTH_BUDGETS = {
