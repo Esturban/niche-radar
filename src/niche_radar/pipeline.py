@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
-from pathlib import Path
 
 from .cluster import build_question_graph, cluster_terms
 from .collect import (

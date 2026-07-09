@@ -4,8 +4,8 @@ import csv
 import json
 from pathlib import Path
 
-from .signal_quality import PACKAGING_TOKENS, founder_core_tokens
-from .utils import content_tokens, dedupe_preserve_order, normalize_search_term, now_iso
+from .signal_quality import founder_core_tokens
+from .utils import dedupe_preserve_order, normalize_search_term, now_iso
 
 HEADLINE_PACKAGING_TOKENS = {
     "analytics",
@@ -619,7 +619,7 @@ def _validation_plan(*, highlighted: dict) -> list[dict]:
     return [
         {
             "target": f"{icp} currently doing {workflow}.",
-            "hypothesis": f"They are still running this workflow manually every week because the existing setup does not cover the messy edge cases.",
+            "hypothesis": "They are still running this workflow manually every week because the existing setup does not cover the messy edge cases.",
             "prompt": f"Walk me through the last time you had to handle {workflow} by hand.",
         },
         {
