@@ -30,3 +30,8 @@ __pycache__/
 /.Rprofile
 /legacy/
 .gstack/
+.codegraph/
+.wolf/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
