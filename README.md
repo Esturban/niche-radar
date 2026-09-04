@@ -319,7 +319,3 @@ It also appends a one-line summary to `runs/index.jsonl`.
 - You do not need every artifact.
 - You do not need Bing, Search Console, or Keyword Planner to get a useful run.
 - You only need one profile input and the generated `report.md`.
-
-## Legacy project
-
-The previous R-based SEM analysis project is preserved under [legacy/sem-analysis-r](/Users/EVA/Desktop/eva/03_development/_dev/repos/2_analysis/r/sem-analysis/legacy/sem-analysis-r).
