@@ -1,6 +1,6 @@
 name: Sync Trunk to Dev
 
-# DEV-309: dev -> trunk promotion is a squash merge, which leaves `dev` one commit
+# dev -> trunk promotion is a squash merge, which leaves `dev` one commit
 # behind trunk forever after ("master^N DIVERGED"). This job closes that gap by
 # opening a trunk -> dev PR after every push to trunk (master/main).
 #
@@ -71,9 +71,9 @@ jobs:
           gh pr create \
             --base dev --head "$SYNC_BRANCH" \
             --title "sync: $BR -> dev [skip ci]" \
-            --body "Auto-opened by the \`Sync Trunk to Dev\` action after a push to \`$BR\`. This keeps \`dev\` from drifting behind trunk after a squash-merge promotion (DEV-309). **This PR is opened for manual review only -- it is never auto-merged, fast-forwarded, or landed by CI.** EV requested as reviewer." \
+            --body "Auto-opened by the \`Sync Trunk to Dev\` action after a push to \`$BR\`. This keeps \`dev\` from drifting behind trunk after a squash-merge promotion. **This PR is opened for manual review only -- it is never auto-merged, fast-forwarded, or landed by CI.** \`$REVIEWER\` requested as reviewer." \
             --reviewer "$REVIEWER" \
             || gh pr create --base dev --head "$SYNC_BRANCH" \
                  --title "sync: $BR -> dev [skip ci]" \
-                 --body "Auto-opened by the \`Sync Trunk to Dev\` action after a push to \`$BR\`. This keeps \`dev\` from drifting behind trunk after a squash-merge promotion (DEV-309). **This PR is opened for manual review only -- it is never auto-merged, fast-forwarded, or landed by CI.** EV requested as reviewer." \
+                 --body "Auto-opened by the \`Sync Trunk to Dev\` action after a push to \`$BR\`. This keeps \`dev\` from drifting behind trunk after a squash-merge promotion. **This PR is opened for manual review only -- it is never auto-merged, fast-forwarded, or landed by CI.** \`$REVIEWER\` requested as reviewer." \
                  --assignee "$REVIEWER"

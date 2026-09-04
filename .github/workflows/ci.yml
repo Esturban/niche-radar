@@ -7,7 +7,7 @@ on:
     branches: [dev]
 
 jobs:
-  ci:
+  CI:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,12 @@ jobs:
           fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install ruff pytest 2>/dev/null || true
+          # Pinned: an unpinned `ruff` install silently picks up whatever the
+          # latest release's default rule set is, and that set has grown over
+          # time (e.g. RUF022, SIM103, I001 joined defaults after 0.12.x) --
+          # so CI can go red with no code change. 0.12.12 is the last version
+          # this repo's source tree passes cleanly under; bump deliberately.
+          pip install "ruff==0.12.12" pytest 2>/dev/null || true
 
       - name: Lint
         run: ruff check .
